@@ -18,6 +18,7 @@ import json
 import os
 import random
 import re
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime, timedelta
@@ -293,7 +294,18 @@ def send_ctrl_v():
     user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
     user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
-DEFAULT_TEMPLATES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates.json")
+def _app_dir():
+    """The folder templates.json/sent_log.json live next to. A PyInstaller
+    onefile exe extracts itself into a temp folder at runtime, so __file__
+    would silently point there instead of next to the real .exe - using
+    sys.executable's folder when frozen keeps saved data next to the exe,
+    where the user actually put it, surviving between runs."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+DEFAULT_TEMPLATES_PATH = os.path.join(_app_dir(), "templates.json")
 
 PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -306,10 +318,103 @@ PHONE_CHARS_RE = re.compile(r"^[\d\-\(\)\s\.\+]{7,20}$")
 
 CLIPBOARD_POLL_MS = 600
 
+# Shipped as the starting library so a bare exe download is immediately
+# useful. Written in the casual, first-name, staff-signed voice observed in
+# this CRM's own message history (only short fragments of real texts were
+# ever visible, never full messages - these are original text written to
+# match that same voice, not reproductions of any real message), covering
+# the actual status/priority categories the CRM itself uses.
+DEFAULT_TEMPLATES = [
+    {
+        "name": "Trial check-in",
+        "text": "Hey {{first_name}}, this is {{staff}} from {{location}}! Just checking in to see how your trial is going so far. Let me know if you have any questions or want to book a time to come back in!",
+    },
+    {
+        "name": "Missed call follow-up",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}} - sorry I missed your call! What can I help you with? Feel free to call/text back anytime.",
+    },
+    {
+        "name": "Appointment reminder",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}} confirming your appointment on {{appointment_date}}. Reply YES to confirm or let me know if you need to reschedule!",
+    },
+    {
+        "name": "Re-engagement (cold lead)",
+        "text": "Hey {{first_name}}, it's {{staff}} from {{location}}. It's been a bit since we last connected - we'd love to have you back in! Let me know if you're still interested and I can get you set up.",
+    },
+    {
+        "name": "Welcome / new member",
+        "text": "Welcome to {{location}}, {{first_name}}! This is {{staff}} - excited to have you as a member. Let me know if you ever have questions, and see you at the gym!",
+    },
+    {
+        "name": "No-show follow-up",
+        "text": "Hey {{first_name}}, this is {{staff}} from {{location}} - we missed you at your appointment on {{appointment_date}}! No worries at all, just let me know a better time and I'll get you rebooked.",
+    },
+    {
+        "name": "Free trial pass follow-up",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}! Wanted to make sure your free trial pass came through okay - come in anytime and I'll show you around. Any day works!",
+    },
+    {
+        "name": "Post-first-workout check-in",
+        "text": "Hey {{first_name}}, {{staff}} here from {{location}} - how'd your first workout go? Let me know if you're feeling sore or have any questions, happy to help!",
+    },
+    {
+        "name": "Membership renewal reminder",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}. Just a heads up that your membership is coming up for renewal - let me know if you'd like to go over your options anytime!",
+    },
+    {
+        "name": "Membership expired win-back",
+        "text": "Hey {{first_name}}, it's {{staff}} from {{location}}. Noticed your membership lapsed - we'd love to have you back! Let me know if you want to talk through options, no pressure at all.",
+    },
+    {
+        "name": "Referral thank-you",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}} - thank you so much for referring a friend! We really appreciate it. Let me know if there's ever anything you need.",
+    },
+    {
+        "name": "Birthday message",
+        "text": "Happy birthday, {{first_name}}! This is {{staff}} from {{location}} wishing you a great one. Come celebrate with a workout on us if you're free this week!",
+    },
+    {
+        "name": "Billing / payment reminder",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}. Looks like there was an issue processing your last payment - could you give us a call or stop by when you get a chance? Thanks!",
+    },
+    {
+        "name": "Collections outreach (friendly)",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}. Reaching out about your account balance - totally understand things come up. Let me know what works for you and we'll get it sorted out.",
+    },
+    {
+        "name": "Insurance paperwork follow-up",
+        "text": "Hey {{first_name}}, this is {{staff}} from {{location}}. Just following up on the insurance paperwork for your membership - let me know if you have any questions or need help getting it submitted!",
+    },
+    {
+        "name": "Relocating / not local follow-up",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}. Heard you might be moving out of the area - wanted to check in on your membership. Happy to help figure out next steps whenever you're ready.",
+    },
+    {
+        "name": "Holiday hours notice",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}! Just a heads up that our hours are a little different for the holiday - let us know if you have any questions about the schedule.",
+    },
+    {
+        "name": "New class or program announcement",
+        "text": "Hey {{first_name}}, {{staff}} here from {{location}} - we just added a new class we think you'd love! Let me know if you want the schedule or want to try it out.",
+    },
+    {
+        "name": "Long time no see check-in",
+        "text": "Hey {{first_name}}, this is {{staff}} from {{location}} - haven't seen you in a bit! Just checking in to see how you're doing and if there's anything we can help with.",
+    },
+    {
+        "name": "Personal training offer",
+        "text": "Hi {{first_name}}, this is {{staff}} from {{location}}. Thought you might be interested in a personal training session to help hit your goals faster - want me to set one up for you?",
+    },
+]
+
 
 def load_templates(path):
     if not os.path.exists(path):
-        return []
+        try:
+            save_templates(path, DEFAULT_TEMPLATES)
+        except OSError:
+            pass  # read-only location - still usable this session, just won't persist
+        return [dict(t) for t in DEFAULT_TEMPLATES]
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data.get("templates", [])
