@@ -1,0 +1,24 @@
+{
+  "templates": [
+    {
+      "name": "Trial check-in",
+      "text": "Hey {{first_name}}, this is {{staff}} from {{location}}! Just checking in to see how your trial is going so far. Let me know if you have any questions or want to book a time to come back in!"
+    },
+    {
+      "name": "Missed call follow-up",
+      "text": "Hi {{first_name}}, this is {{staff}} from {{location}} - sorry I missed your call! What can I help you with? Feel free to call/text back anytime."
+    },
+    {
+      "name": "Appointment reminder",
+      "text": "Hi {{first_name}}, this is {{staff}} from {{location}} confirming your appointment on {{appointment_date}}. Reply YES to confirm or let me know if you need to reschedule!"
+    },
+    {
+      "name": "Re-engagement (cold lead)",
+      "text": "Hey {{first_name}}, it's {{staff}} from {{location}}. It's been a bit since we last connected - we'd love to have you back in! Let me know if you're still interested and I can get you set up."
+    },
+    {
+      "name": "Welcome / new member",
+      "text": "Welcome to {{location}}, {{first_name}}! This is {{staff}} - excited to have you as a member. Let me know if you ever have questions, and see you at the gym!"
+    }
+  ]
+}
