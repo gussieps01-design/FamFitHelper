@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FamFitHelper CRM Assist</title>
+<style>
+  body { font-family: Segoe UI, sans-serif; width: 360px; padding: 12px; color: #2B2724; background: #FAF7F2; }
+  h3 { margin: 0 0 4px 0; font-size: 15px; }
+  .muted { color: #8A8378; font-size: 11px; margin-bottom: 8px; }
+  label { display: block; font-size: 12px; margin-top: 8px; margin-bottom: 2px; }
+  textarea, select, input { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12px; padding: 5px; border: 1px solid #E8E1D6; border-radius: 3px; }
+  textarea { height: 70px; resize: vertical; }
+  .row { display: flex; gap: 6px; }
+  .row > div { flex: 1; }
+  button { margin-top: 10px; width: 100%; padding: 8px; border: none; border-radius: 3px; background: #C6552B; color: #fff; font-weight: bold; cursor: pointer; }
+  button.secondary { background: #fff; color: #2B2724; border: 1px solid #C9C0B2; margin-top: 6px; }
+  #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h3>FamFitHelper CRM Assist</h3>
+  <div class="muted">Never clicks Send. Pre-fills each message; you click Send in the CRM yourself, then it advances automatically.</div>
+
+  <label>Contact list (one per line: Name&lt;TAB&gt;Phone, or just Name)</label>
+  <textarea id="contacts" placeholder="Nirey Mcbride	(616) 893-3003
+Dawn Perfitt	(231) 557-0677"></textarea>
+
+  <label>Template</label>
+  <select id="templateSelect"></select>
+  <textarea id="templateText"></textarea>
+
+  <div class="row">
+    <div>
+      <label>Staff</label>
+      <input id="staff" placeholder="Michael Lara">
+    </div>
+    <div>
+      <label>Location</label>
+      <input id="location" placeholder="Family Fitness Fruitport Twp">
+    </div>
+  </div>
+
+  <button id="startBtn">Start batch (pre-fill first contact)</button>
+  <button id="stopBtn" class="secondary">Stop</button>
+  <div id="status"></div>
+
+  <script src="templates.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "FamFitHelper CRM Assist",
+  "version": "1.0.0",
+  "description": "Pre-fills text messages for a batch of CRM contacts and auto-advances after you send each one yourself. Never clicks Send.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://crm.healthyimagefitness.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://crm.healthyimagefitness.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
