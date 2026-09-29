@@ -23,28 +23,29 @@
 </head>
 <body>
   <h3>FamFitHelper CRM Assist</h3>
-  <div class="muted">Never clicks Send. Pre-fills each message; you click Send (or Ctrl+Enter) yourself, then it advances automatically.</div>
+  <div class="muted">By default, never clicks Send - you click Send (or Ctrl+Enter) yourself, then it advances automatically. The "Auto-send" checkbox below turns that off and sends unattended instead.</div>
 
   <fieldset>
     <legend>Load from CRM (live)</legend>
+    <button id="refreshOptionsBtn" type="button" class="secondary">Refresh dropdown options from CRM</button>
     <div class="row">
       <div>
-        <label>Status</label>
-        <input id="fStatus" placeholder="Trial">
+        <label>Status (ctrl/cmd-click for multiple)</label>
+        <select id="fStatus" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
       <div>
-        <label>Priority</label>
-        <input id="fPriority" placeholder="Warm">
+        <label>Priority (ctrl/cmd-click for multiple)</label>
+        <select id="fPriority" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
     </div>
     <div class="row">
       <div>
-        <label>Location</label>
-        <input id="fLocation">
+        <label>Location (ctrl/cmd-click for multiple)</label>
+        <select id="fLocation" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
       <div>
-        <label>Staff</label>
-        <input id="fStaff">
+        <label>Staff (ctrl/cmd-click for multiple)</label>
+        <select id="fStaff" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
     </div>
     <div class="row">
@@ -80,6 +81,16 @@
   <h4>Loaded contacts</h4>
   <div id="loadedSummary" class="muted">None loaded yet.</div>
 
+  <div class="row" style="align-items:flex-end;">
+    <div style="flex:0 0 80px;">
+      <label>Text how many</label>
+      <input id="textCount" type="number" min="1" placeholder="all">
+    </div>
+    <div style="flex:1;padding-bottom:6px;">
+      <span id="textCountOf" class="muted">of 0 loaded, to text</span>
+    </div>
+  </div>
+
   <label>Template</label>
   <select id="templateSelect"></select>
   <textarea id="templateText"></textarea>
@@ -87,13 +98,18 @@
   <div class="row">
     <div>
       <label>Staff (fallback if not in CRM data)</label>
-      <input id="staff" placeholder="Michael Lara">
+      <select id="staff"><option value="">(use contact's own staff)</option></select>
     </div>
     <div>
       <label>Location (fallback)</label>
-      <input id="location" placeholder="Family Fitness Fruitport Twp">
+      <select id="location"><option value="">(use contact's own location)</option></select>
     </div>
   </div>
+
+  <label style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+    <input type="checkbox" id="autoSend" style="width:auto;">
+    <span>Auto-send each message automatically (skips manual click/review per contact)</span>
+  </label>
 
   <button id="startBtn">Start batch (pre-fill first contact)</button>
   <button id="stopBtn" class="secondary">Stop</button>

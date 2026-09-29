@@ -1,11 +1,16 @@
 // FamFitHelper CRM Assist - content script
 //
 // What this does: pre-fills the SMS textarea for one contact at a time.
-// It NEVER clicks the CRM's own "Send message" button. It only watches for
-// the CRM's own success signal (the green flash banner it shows after a
-// real, human-clicked send) and, once that's seen, moves on to pre-filling
-// the next contact. The actual send stays a manual, deliberate click by a
-// human on the CRM's real page, every single time.
+// By default it NEVER clicks the CRM's own "Send message" button - it only
+// watches for the CRM's own success signal (the green flash banner it shows
+// after a send) and, once that's seen, moves on to pre-filling the next
+// contact. The actual send is a manual, deliberate click by a human on the
+// CRM's real page, every single time.
+//
+// Exception: if the batch has autoSend: true (set via the popup's "Auto-send"
+// checkbox, opt-in and confirmed per batch), this script clicks the real
+// Send button itself for every contact, unattended. Same success-banner
+// detection gates advancing either way.
 //
 // How the CRM's send works (reverse engineered from its own JS, never
 // triggered by this script): clicking "Send message" runs
@@ -90,6 +95,16 @@
     return (p || "").replace(/\D/g, "").slice(-10);
   }
 
+  // The page reuses id="customer_message_message" for BOTH the Email and SMS
+  // compose forms (invalid HTML, but that's what the CRM renders). getElementById
+  // always returns the first match, which is the hidden Email one - so any fill
+  // that used getElementById directly was silently writing into the wrong,
+  // invisible textarea. Scope the lookup to the SMS form specifically.
+  function getSmsTextarea() {
+    const smsForm = document.getElementById("new_sms_customer_message");
+    return smsForm ? smsForm.querySelector("#customer_message_message") : null;
+  }
+
   function findContactRowLink(contact) {
     const rows = Array.from(document.querySelectorAll("table tbody tr"));
     for (const row of rows) {
@@ -110,7 +125,54 @@
     return null;
   }
 
-  async function openAndFillContact(batch, index) {
+  // Contacts loaded from the live CRM carry their customer id, so they can be
+  // opened no matter which grid page is showing: build the same remote-modal
+  // link the grid renders for each row and click it. Pasted contacts have no
+  // id and fall back to searching the rendered table.
+  function openContactModal(contact) {
+    if (contact.id) {
+      const a = document.createElement("a");
+      a.href = `/customers/${contact.id}/customer_journal_items/new`;
+      a.setAttribute("data-remote", "true");
+      a.setAttribute("data-toggle", "modal");
+      a.setAttribute("data-target", "#modal-window");
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return true;
+    }
+    const link = findContactRowLink(contact);
+    if (!link) return false;
+    link.click();
+    return true;
+  }
+
+  // If the modal's SMS form names a customer id in its action URL, it must be
+  // this contact's - guards against filling a stale modal left over from the
+  // previous contact. Forms with no id in the action pass (can't tell).
+  function smsFormCustomerId() {
+    const form = document.getElementById("new_sms_customer_message");
+    const m = ((form && form.getAttribute("action")) || "").match(/customers\/(\d+)/);
+    return m ? m[1] : null;
+  }
+
+  function smsFormBelongsTo(contact) {
+    if (!contact.id) return true;
+    const formId = smsFormCustomerId();
+    return !formId || formId === String(contact.id);
+  }
+
+  function smsFormExplicitlyFor(contact) {
+    return !!contact.id && smsFormCustomerId() === String(contact.id);
+  }
+
+  // Bumped by Start and Stop so timers from an old/stopped run (auto-send
+  // click, advance-to-next) can't fire after the user hit Stop.
+  let runId = 0;
+
+  async function openAndFillContact(batch, index, myRun) {
+    if (myRun !== runId) return;
     if (index >= batch.contacts.length) {
       showBadge(`All ${batch.contacts.length} contact(s) done!`, "#2a7a2a");
       awaitingSendFor = null;
@@ -120,8 +182,14 @@
     const contact = batch.contacts[index];
     showBadge(`Finding ${contact.name}...`);
 
-    const link = findContactRowLink(contact);
-    if (!link) {
+    // Remember the previous contact's modal pieces so the waits below only
+    // succeed once the CRM has swapped in NEW content for this contact -
+    // otherwise contact 2+ would instantly "find" contact 1's leftover form
+    // and fill the wrong person's message box.
+    const oldMessagesTab = document.querySelector('a[href="#messages"]');
+    const oldTextarea = getSmsTextarea();
+
+    if (!openContactModal(contact)) {
       showBadge(
         `Couldn't find "${contact.name}" on this page. Navigate to the page/filter that shows them, then reopen the popup and click Start again.`,
         "#a33"
@@ -130,24 +198,29 @@
       return;
     }
 
-    link.click();
-
     try {
-      await waitFor(() => document.querySelector('a[href="#messages"]'), 8000);
-      const messagingTab = document.querySelector('a[href="#messages"]');
-      messagingTab.click();
+      await waitFor(() => {
+        const t = document.querySelector('a[href="#messages"]');
+        return t && (t !== oldMessagesTab || smsFormExplicitlyFor(contact)) ? t : null;
+      }, 10000);
+      document.querySelector('a[href="#messages"]').click();
       await waitFor(() => document.querySelector('a[href="#smss"]'), 4000);
-      const smsTab = document.querySelector('a[href="#smss"]');
-      smsTab.click();
-      await waitFor(() => document.getElementById("customer_message_message"), 4000);
+      document.querySelector('a[href="#smss"]').click();
+      await waitFor(() => {
+        const t = getSmsTextarea();
+        return t && (t !== oldTextarea || smsFormExplicitlyFor(contact)) ? t : null;
+      }, 4000);
+      if (!smsFormBelongsTo(contact)) throw new Error("wrong contact in modal");
     } catch (e) {
+      if (myRun !== runId) return;
       showBadge(`Couldn't open the message box for ${contact.name}. Skipping - check them manually.`, "#a33");
       awaitingSendFor = null;
       const nextBatch = { ...batch, index: index + 1 };
       await chrome.storage.local.set({ famfitBatch: nextBatch });
-      setTimeout(() => openAndFillContact(nextBatch, index + 1), 1500);
+      setTimeout(() => openAndFillContact(nextBatch, index + 1, myRun), 1500);
       return;
     }
+    if (myRun !== runId) return;
 
     const [firstName, ...rest] = (contact.name || "").split(" ");
     const rendered = famfitRenderTemplate(batch.templateText, {
@@ -157,7 +230,7 @@
       location: contact.location || batch.location || "",
     });
 
-    const textarea = document.getElementById("customer_message_message");
+    const textarea = getSmsTextarea();
     textarea.value = rendered;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     textarea.dispatchEvent(new Event("change", { bubbles: true }));
@@ -165,9 +238,22 @@
     textarea.focus();
 
     awaitingSendFor = contact;
-    showReadyBadge(contact, index + 1, batch.contacts.length);
     ensureSendObserver();
     ensureSendShortcut();
+
+    if (batch.autoSend) {
+      showBadge(
+        `Auto-sending to ${contact.name} (${index + 1} of ${batch.contacts.length}) - no manual review`,
+        "#a33"
+      );
+      setTimeout(() => {
+        if (myRun !== runId || awaitingSendFor !== contact) return;
+        const sendLink = document.getElementById("submit_sms_message");
+        if (sendLink) sendLink.click();
+      }, 400);
+    } else {
+      showReadyBadge(contact, index + 1, batch.contacts.length);
+    }
   }
 
   // Ctrl+Enter while the message box is focused clicks the exact same real
@@ -181,7 +267,7 @@
     shortcutStarted = true;
     document.addEventListener("keydown", (e) => {
       if (!awaitingSendFor) return;
-      const textarea = document.getElementById("customer_message_message");
+      const textarea = getSmsTextarea();
       if (document.activeElement !== textarea) return;
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -215,14 +301,15 @@
 
   async function handleSendDetected() {
     const sentContact = awaitingSendFor;
+    const myRun = runId;
     awaitingSendFor = null;
     showBadge(`Sent to ${sentContact.name}. Moving to next...`, "#2a7a2a");
     const data = await chrome.storage.local.get("famfitBatch");
-    if (!data.famfitBatch) return;
+    if (!data.famfitBatch || myRun !== runId) return;
     const nextIndex = data.famfitBatch.index + 1;
     const nextBatch = { ...data.famfitBatch, index: nextIndex };
     await chrome.storage.local.set({ famfitBatch: nextBatch });
-    setTimeout(() => openAndFillContact(nextBatch, nextIndex), 1200);
+    setTimeout(() => openAndFillContact(nextBatch, nextIndex, myRun), 1200);
   }
 
   // ---------- live CRM fetch: same JSON endpoint and filter logic as the
@@ -243,15 +330,17 @@
     return false;
   }
 
-  function textMatch(want, have) {
-    return !want || (have || "").toLowerCase().includes(String(want).trim().toLowerCase());
+  function multiMatch(wantArr, have) {
+    if (!wantArr || !wantArr.length) return true;
+    const haveNorm = (have || "").trim().toLowerCase();
+    return wantArr.some((w) => haveNorm === String(w).trim().toLowerCase());
   }
 
   function contactMatchesFilters(c, f) {
-    if (!textMatch(f.status, c.status)) return false;
-    if (!textMatch(f.priority, c.priority)) return false;
-    if (!textMatch(f.location, c.location)) return false;
-    if (!textMatch(f.staff, c.staff)) return false;
+    if (!multiMatch(f.status, c.status)) return false;
+    if (!multiMatch(f.priority, c.priority)) return false;
+    if (!multiMatch(f.location, c.location)) return false;
+    if (!multiMatch(f.staff, c.staff)) return false;
     if (f.idleMin != null || f.idleMax != null) {
       if (typeof c.idle !== "number") return false;
       if (f.idleMin != null && c.idle < f.idleMin) return false;
@@ -272,6 +361,7 @@
     const contacts = (payload.data || [])
       .filter((r) => r.fullname)
       .map((r) => ({
+        id: r.id,
         name: r.fullname,
         phone: r.phone || "",
         staff: r.user || "",
@@ -283,6 +373,36 @@
         created_at: r.created_at,
       }));
     return { contacts, total: payload.total || 0 };
+  }
+
+  async function fetchFilterOptions(maxPages, progressCb) {
+    const statuses = new Set();
+    const priorities = new Set();
+    const locations = new Set();
+    const staff = new Set();
+    let total = 0;
+    let page = 1;
+    for (; page <= maxPages; page++) {
+      const { contacts, total: t } = await fetchCustomersPage(page);
+      total = t;
+      if (!contacts.length) break;
+      for (const c of contacts) {
+        if (c.status) statuses.add(c.status.trim());
+        if (c.priority) priorities.add(c.priority.trim());
+        if (c.location) locations.add(c.location.trim());
+        if (c.staff) staff.add(c.staff.trim());
+      }
+      if (progressCb) progressCb(page, total);
+    }
+    const sortFn = (a, b) => a.localeCompare(b);
+    return {
+      statuses: Array.from(statuses).sort(sortFn),
+      priorities: Array.from(priorities).sort(sortFn),
+      locations: Array.from(locations).sort(sortFn),
+      staff: Array.from(staff).sort(sortFn),
+      pagesSearched: page - 1,
+      total,
+    };
   }
 
   async function searchFilteredContacts(filters, maxPages, progressCb) {
@@ -308,13 +428,16 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "FAMFIT_START") {
+      const myRun = ++runId;
+      awaitingSendFor = null;
       chrome.storage.local.get("famfitBatch", (data) => {
         if (data.famfitBatch) {
-          openAndFillContact(data.famfitBatch, data.famfitBatch.index);
+          openAndFillContact(data.famfitBatch, data.famfitBatch.index, myRun);
         }
       });
       sendResponse({ ok: true });
     } else if (message.type === "FAMFIT_STOP") {
+      runId++;
       awaitingSendFor = null;
       hideBadge();
       sendResponse({ ok: true });
@@ -332,6 +455,24 @@
         })
         .catch((e) => {
           showBadge(`CRM search failed: ${e.message}`, "#a33");
+          sendResponse({ ok: false, error: e.message });
+        });
+      return true; // async response
+    } else if (message.type === "FAMFIT_GET_FILTER_OPTIONS") {
+      const scanPages = message.maxPages || 10;
+      showBadge(`Scanning filter options... page 1 of ${scanPages}`);
+      fetchFilterOptions(scanPages, (page, total) => {
+        showBadge(`Scanning filter options... page ${page} of ${scanPages} (${total} customers total)`);
+      })
+        .then((result) => {
+          showBadge(
+            `Loaded filter options (scanned ${result.pagesSearched} page(s) of ${result.total} total).`,
+            "#2a7a2a"
+          );
+          sendResponse({ ok: true, ...result });
+        })
+        .catch((e) => {
+          showBadge(`Couldn't load filter options: ${e.message}`, "#a33");
           sendResponse({ ok: false, error: e.message });
         });
       return true; // async response
