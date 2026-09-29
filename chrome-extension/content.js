@@ -153,8 +153,8 @@
     const rendered = famfitRenderTemplate(batch.templateText, {
       first_name: firstName || "",
       last_name: rest.join(" "),
-      staff: batch.staff || "",
-      location: batch.location || "",
+      staff: contact.staff || batch.staff || "",
+      location: contact.location || batch.location || "",
     });
 
     const textarea = document.getElementById("customer_message_message");
@@ -225,6 +225,87 @@
     setTimeout(() => openAndFillContact(nextBatch, nextIndex), 1200);
   }
 
+  // ---------- live CRM fetch: same JSON endpoint and filter logic as the
+  // desktop app, ported to JS. Runs from the content script so it's
+  // same-origin with the CRM and automatically carries the user's own
+  // session cookies - no separate login needed. ----------
+
+  function daysSince(isoTimestamp) {
+    if (!isoTimestamp) return null;
+    const then = new Date(isoTimestamp);
+    if (isNaN(then.getTime())) return null;
+    return Math.floor((Date.now() - then.getTime()) / 86400000);
+  }
+
+  function contactIsAutoExcluded(c) {
+    if ((c.priority || "").trim().toLowerCase() === "dead") return true;
+    if (["phone_bounced", "phone_unsubscribed"].includes(c.phone_subscription_status)) return true;
+    return false;
+  }
+
+  function textMatch(want, have) {
+    return !want || (have || "").toLowerCase().includes(String(want).trim().toLowerCase());
+  }
+
+  function contactMatchesFilters(c, f) {
+    if (!textMatch(f.status, c.status)) return false;
+    if (!textMatch(f.priority, c.priority)) return false;
+    if (!textMatch(f.location, c.location)) return false;
+    if (!textMatch(f.staff, c.staff)) return false;
+    if (f.idleMin != null || f.idleMax != null) {
+      if (typeof c.idle !== "number") return false;
+      if (f.idleMin != null && c.idle < f.idleMin) return false;
+      if (f.idleMax != null && c.idle > f.idleMax) return false;
+    }
+    if (f.signedWithinDays != null) {
+      const age = daysSince(c.created_at);
+      if (age === null || age > f.signedWithinDays) return false;
+    }
+    return true;
+  }
+
+  async function fetchCustomersPage(page) {
+    const params = new URLSearchParams({ take: 100, skip: (page - 1) * 100, page, pageSize: 100 });
+    const resp = await fetch(`/customers_grid.json?${params}`, { credentials: "include" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const payload = await resp.json();
+    const contacts = (payload.data || [])
+      .filter((r) => r.fullname)
+      .map((r) => ({
+        name: r.fullname,
+        phone: r.phone || "",
+        staff: r.user || "",
+        location: r.location || "",
+        status: r.status || "",
+        priority: r.priority || "",
+        phone_subscription_status: r.phone_subscription_status,
+        idle: r.idle,
+        created_at: r.created_at,
+      }));
+    return { contacts, total: payload.total || 0 };
+  }
+
+  async function searchFilteredContacts(filters, maxPages, progressCb) {
+    const matches = [];
+    let total = 0;
+    let page = 1;
+    let excluded = 0;
+    for (; page <= maxPages; page++) {
+      const { contacts, total: t } = await fetchCustomersPage(page);
+      total = t;
+      if (!contacts.length) break;
+      for (const c of contacts) {
+        if (contactIsAutoExcluded(c)) {
+          excluded++;
+          continue;
+        }
+        if (contactMatchesFilters(c, filters)) matches.push(c);
+      }
+      if (progressCb) progressCb(page, matches.length, total);
+    }
+    return { matches, pagesSearched: page - 1, total, excluded };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "FAMFIT_START") {
       chrome.storage.local.get("famfitBatch", (data) => {
@@ -237,6 +318,23 @@
       awaitingSendFor = null;
       hideBadge();
       sendResponse({ ok: true });
+    } else if (message.type === "FAMFIT_LOAD_FILTERED") {
+      showBadge("Searching CRM...");
+      searchFilteredContacts(message.filters, message.maxPages || 5, (page, found, total) => {
+        showBadge(`Searching... page ${page}, ${found} match(es) so far (of ${total} total).`);
+      })
+        .then((result) => {
+          showBadge(
+            `Loaded ${result.matches.length} matching contact(s) (searched ${result.pagesSearched} page(s) of ${result.total} total, ${result.excluded} auto-excluded).`,
+            "#2a7a2a"
+          );
+          sendResponse({ ok: true, ...result });
+        })
+        .catch((e) => {
+          showBadge(`CRM search failed: ${e.message}`, "#a33");
+          sendResponse({ ok: false, error: e.message });
+        });
+      return true; // async response
     }
     return true;
   });

@@ -4,26 +4,81 @@
 <meta charset="utf-8">
 <title>FamFitHelper CRM Assist</title>
 <style>
-  body { font-family: Segoe UI, sans-serif; width: 360px; padding: 12px; color: #2B2724; background: #FAF7F2; }
+  body { font-family: Segoe UI, sans-serif; width: 380px; padding: 12px; color: #2B2724; background: #FAF7F2; }
   h3 { margin: 0 0 4px 0; font-size: 15px; }
+  h4 { margin: 10px 0 2px 0; font-size: 12px; font-weight: bold; }
   .muted { color: #8A8378; font-size: 11px; margin-bottom: 8px; }
-  label { display: block; font-size: 12px; margin-top: 8px; margin-bottom: 2px; }
+  label { display: block; font-size: 12px; margin-top: 6px; margin-bottom: 2px; }
   textarea, select, input { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12px; padding: 5px; border: 1px solid #E8E1D6; border-radius: 3px; }
-  textarea { height: 70px; resize: vertical; }
+  textarea { height: 60px; resize: vertical; }
   .row { display: flex; gap: 6px; }
   .row > div { flex: 1; }
-  button { margin-top: 10px; width: 100%; padding: 8px; border: none; border-radius: 3px; background: #C6552B; color: #fff; font-weight: bold; cursor: pointer; }
-  button.secondary { background: #fff; color: #2B2724; border: 1px solid #C9C0B2; margin-top: 6px; }
+  fieldset { border: 1px solid #E8E1D6; border-radius: 4px; margin-top: 10px; padding: 8px; }
+  legend { font-size: 12px; font-weight: bold; padding: 0 4px; }
+  button { margin-top: 8px; width: 100%; padding: 8px; border: none; border-radius: 3px; background: #C6552B; color: #fff; font-weight: bold; cursor: pointer; }
+  button.secondary { background: #fff; color: #2B2724; border: 1px solid #C9C0B2; }
   #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  details summary { font-size: 12px; cursor: pointer; margin-top: 8px; color: #8A8378; }
 </style>
 </head>
 <body>
   <h3>FamFitHelper CRM Assist</h3>
-  <div class="muted">Never clicks Send. Pre-fills each message; you click Send in the CRM yourself, then it advances automatically.</div>
+  <div class="muted">Never clicks Send. Pre-fills each message; you click Send (or Ctrl+Enter) yourself, then it advances automatically.</div>
 
-  <label>Contact list (one per line: Name&lt;TAB&gt;Phone, or just Name)</label>
-  <textarea id="contacts" placeholder="Nirey Mcbride	(616) 893-3003
-Dawn Perfitt	(231) 557-0677"></textarea>
+  <fieldset>
+    <legend>Load from CRM (live)</legend>
+    <div class="row">
+      <div>
+        <label>Status</label>
+        <input id="fStatus" placeholder="Trial">
+      </div>
+      <div>
+        <label>Priority</label>
+        <input id="fPriority" placeholder="Warm">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Location</label>
+        <input id="fLocation">
+      </div>
+      <div>
+        <label>Staff</label>
+        <input id="fStaff">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Idle days min</label>
+        <input id="fIdleMin" type="number">
+      </div>
+      <div>
+        <label>Idle days max</label>
+        <input id="fIdleMax" type="number">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Signed up within (days)</label>
+        <input id="fSignedWithin" type="number">
+      </div>
+      <div>
+        <label>Search up to N pages</label>
+        <input id="fMaxPages" type="number" value="5">
+      </div>
+    </div>
+    <button id="loadBtn">Load matching contacts</button>
+  </fieldset>
+
+  <details>
+    <summary>Or paste a list manually instead</summary>
+    <label>One per line: Name&lt;TAB&gt;Phone, or just Name</label>
+    <textarea id="contacts" placeholder="Nirey Mcbride	(616) 893-3003"></textarea>
+    <button id="usePastedBtn" class="secondary">Use this pasted list</button>
+  </details>
+
+  <h4>Loaded contacts</h4>
+  <div id="loadedSummary" class="muted">None loaded yet.</div>
 
   <label>Template</label>
   <select id="templateSelect"></select>
@@ -31,11 +86,11 @@ Dawn Perfitt	(231) 557-0677"></textarea>
 
   <div class="row">
     <div>
-      <label>Staff</label>
+      <label>Staff (fallback if not in CRM data)</label>
       <input id="staff" placeholder="Michael Lara">
     </div>
     <div>
-      <label>Location</label>
+      <label>Location (fallback)</label>
       <input id="location" placeholder="Family Fitness Fruitport Twp">
     </div>
   </div>
