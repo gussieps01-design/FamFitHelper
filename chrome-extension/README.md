@@ -16,8 +16,9 @@ Pre-fills text messages for a batch of CRM contacts, one at a time, and automati
 3. Paste your contact list (one per line: `Name<TAB>Phone`, or just `Name`).
 4. Pick a template, optionally fill in Staff/Location (applied to every message in the batch).
 5. Click **Start batch**. It finds the first contact on the page, opens their message box, and fills in the rendered message.
-6. **You review it and click Send yourself in the CRM.** Once the CRM confirms the send, the extension automatically opens the next contact and fills in their message.
-7. Repeat until the badge in the top-right says "All done."
+6. **You review it and click Send yourself in the CRM** - or press **Ctrl+Enter** while your cursor is in the message box, which does the exact same thing as clicking Send, just without reaching for the mouse. Either way, it's still your deliberate action on that specific message.
+7. Once the CRM confirms the send, the extension automatically opens the next contact and fills in their message. The badge shows the name and phone number in large text first, since "is this the right person" is the one check worth never skipping.
+8. Repeat until the badge says "All done."
 
 Click **Stop** anytime to halt auto-advancing.
 

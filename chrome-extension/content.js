@@ -31,7 +31,38 @@
       document.body.appendChild(el);
     }
     el.style.background = color || "#2B2724";
-    el.textContent = "FamFitHelper: " + text;
+    el.innerHTML = "";
+    const line = document.createElement("div");
+    line.textContent = "FamFitHelper: " + text;
+    el.appendChild(line);
+  }
+
+  // The single highest-value check per message is "is this the right
+  // person" - so that gets its own large, hard-to-miss line, separate from
+  // the smaller status text, instead of buried in a sentence.
+  function showReadyBadge(contact, position, total) {
+    let el = document.getElementById(STATUS_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = STATUS_ID;
+      el.style.cssText =
+        "position:fixed;top:12px;right:12px;z-index:999999;background:#C6552B;color:#fff;" +
+        "padding:12px 16px;border-radius:6px;font:13px Segoe UI,sans-serif;max-width:340px;" +
+        "box-shadow:0 2px 8px rgba(0,0,0,.3);";
+      document.body.appendChild(el);
+    }
+    el.style.background = "#C6552B";
+    el.innerHTML =
+      `<div style="font-size:16px;font-weight:bold;margin-bottom:2px;">${escapeHtml(contact.name)}</div>` +
+      `<div style="opacity:.9;margin-bottom:6px;">${escapeHtml(contact.phone || "")}</div>` +
+      `<div style="font-size:11px;opacity:.85;">Contact ${position} of ${total} - review, then Send ` +
+      `(or Ctrl+Enter while in the message box)</div>`;
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
   }
 
   function hideBadge() {
@@ -130,10 +161,34 @@
     textarea.value = rendered;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     textarea.dispatchEvent(new Event("change", { bubbles: true }));
+    textarea.scrollIntoView({ behavior: "smooth", block: "center" });
+    textarea.focus();
 
     awaitingSendFor = contact;
-    showBadge(`Ready: ${contact.name} (${index + 1}/${batch.contacts.length}). Review, then click Send yourself.`, "#C6552B");
+    showReadyBadge(contact, index + 1, batch.contacts.length);
     ensureSendObserver();
+    ensureSendShortcut();
+  }
+
+  // Ctrl+Enter while the message box is focused clicks the exact same real
+  // Send button a mouse click would - this is a faster INPUT method for the
+  // same human decision, not a different decision. It only fires while the
+  // textarea for THIS specific message is actively focused, so it can't fire
+  // accidentally from elsewhere on the page or for a message not on screen.
+  let shortcutStarted = false;
+  function ensureSendShortcut() {
+    if (shortcutStarted) return;
+    shortcutStarted = true;
+    document.addEventListener("keydown", (e) => {
+      if (!awaitingSendFor) return;
+      const textarea = document.getElementById("customer_message_message");
+      if (document.activeElement !== textarea) return;
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const sendLink = document.getElementById("submit_sms_message");
+        if (sendLink) sendLink.click();
+      }
+    });
   }
 
   function ensureSendObserver() {
