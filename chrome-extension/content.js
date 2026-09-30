@@ -285,7 +285,7 @@
     }
     batch.inFlight = null;
     batch.index++;
-    if ((batch.consecutiveFailures || 0) >= MAX_CONSECUTIVE_FAILURES) {
+    if ((batch.consecutiveFailures || 0) >= MAX_CONSECUTIVE_FAILURES && batch.index < batch.contacts.length) {
       batch.running = false;
       await saveBatch(batch);
       activeRun = false;
@@ -352,14 +352,22 @@
       await waitFor(() => {
         const t = document.querySelector('a[href="#messages"]');
         return isFresh(t) ? t : null;
-      }, 10000);
+      }, 15000);
       document.querySelector('a[href="#messages"]').click();
-      await waitFor(() => document.querySelector('a[href="#smss"]'), 4000);
+      await waitFor(() => document.querySelector('a[href="#smss"]'), 8000);
       document.querySelector('a[href="#smss"]').click();
+      // The CRM can redraw the window while loading; keep nudging it back to
+      // the SMS tab until the SMS box is showing.
+      let lastNudge = Date.now();
       await waitFor(() => {
         const t = getSmsTextarea();
-        return isFresh(t) && isVisible(t) ? t : null;
-      }, 4000);
+        if (isFresh(t) && isVisible(t)) return t;
+        if (Date.now() - lastNudge > 1000 && document.querySelector('a[href="#smss"]')) {
+          lastNudge = Date.now();
+          showSmsTab();
+        }
+        return null;
+      }, 10000);
       if (!smsFormBelongsTo(contact)) throw new Error("wrong contact in modal");
     } catch (e) {
       if (myRun !== runId) return;
@@ -379,9 +387,7 @@
     });
 
     const textarea = getSmsTextarea();
-    textarea.value = rendered;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+    fillBox(textarea, rendered);
     textarea.scrollIntoView({ behavior: "smooth", block: "center" });
     textarea.focus();
 
@@ -398,7 +404,7 @@
     currentIndex = index;
     ensureSendObserver();
     ensureSendListeners();
-    watchForSend(contact, myRun, batch.autoSend && !unfilled.length);
+    watchForSend(contact, myRun, batch.autoSend && !unfilled.length, unfilled.length ? "" : rendered, textarea);
 
     if (unfilled.length) {
       showBadge(
@@ -432,7 +438,7 @@
           return btn;
         };
         let sendBtn = null;
-        try { sendBtn = await waitFor(ready, 5000); } catch (e) { /* why says which check failed */ }
+        try { sendBtn = await waitFor(ready, 8000); } catch (e) { /* why says which check failed */ }
         if (myRun !== runId || awaitingSendFor !== contact) return;
         if (!sendBtn) {
           awaitingSendFor = null;
@@ -484,17 +490,66 @@
   // contact currently awaiting a send. A send only counts as done after this.
   let sendClicked = false;
 
+  function fillBox(box, text) {
+    box.value = text;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  // Bring the SMS tab of the message window back to the front.
+  function showSmsTab() {
+    const root = document.getElementById("modal-window") || document;
+    const smsPane = root.querySelector("#smss");
+    const messagesTab = root.querySelector('a[href="#messages"]');
+    const smsTab = root.querySelector('a[href="#smss"]');
+    if (messagesTab && !(smsPane && isVisible(smsPane))) messagesTab.click();
+    if (smsTab) smsTab.click();
+  }
+
+  const CLOSED_AFTER_MS = 1500;
+  const MAX_TAB_FIXES = 6;
+
   // The CRM closes the message modal after a successful send. Once Send was
   // clicked, the box disappearing = sent -> advance. If the box closes WITHOUT
   // a Send click, the contact is left where it is so Start brings them back.
-  function watchForSend(contact, myRun, autoSend) {
+  //
+  // The CRM also redraws the message window on its own (e.g. after loading
+  // the conversation), which can briefly remove the SMS box, swap in a fresh
+  // empty one, or flip back to another tab. None of that is "closed":
+  //  - "closed" = the SMS box has been gone for CLOSED_AFTER_MS straight
+  //    while the message window itself is not showing
+  //  - window showing but SMS box hidden -> click back to the SMS tab
+  //  - a NEW, empty SMS box -> type the message into it again (a box the
+  //    user has edited is never overwritten)
+  function watchForSend(contact, myRun, autoSend, rendered, filledBox) {
     sendClicked = false;
     let done = false;
+    let lastSeen = Date.now();
+    let tabFixes = 0;
+    let lastTabFix = 0;
     const stop = () => { done = true; obs.disconnect(); clearInterval(iv); };
     const check = () => {
       if (done) return;
       if (myRun !== runId || awaitingSendFor !== contact) { stop(); return; }
-      if (isVisible(getSmsTextarea())) return;
+      const box = getSmsTextarea();
+      if (isVisible(box)) {
+        lastSeen = Date.now();
+        if (!sendClicked && box !== filledBox && rendered && !normText(box.value) && smsFormBelongsTo(contact)) {
+          fillBox(box, rendered);
+          filledBox = box;
+        }
+        return;
+      }
+      if (!sendClicked && isVisible(document.getElementById("modal-window"))) {
+        lastSeen = Date.now();
+        if (tabFixes < MAX_TAB_FIXES && Date.now() - lastTabFix > 700) {
+          tabFixes++;
+          lastTabFix = Date.now();
+          showSmsTab();
+        }
+        return;
+      }
+      if (Date.now() - lastSeen < CLOSED_AFTER_MS) return;
       stop();
       if (sendClicked) {
         handleSendDetected();
@@ -511,7 +566,7 @@
     // tab; the interval is a fallback.
     const obs = new MutationObserver(check);
     obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
-    const iv = setInterval(check, 500);
+    const iv = setInterval(check, 300);
   }
 
   // Capture phase on window, so the CRM's own handlers on the message box
