@@ -17,8 +17,9 @@
 - Grid filter support: status works only by numeric code (0 Member, 1 Guest, 2 Trial, 3 Corporate, 4 Contest Box, 5 Phone Inquiry, 6 Former Member, 7 Member Referral, 9 Event); priority by name; `user_id`; `idle` gte/lte; `created_at` gte `YYYY-MM-DD`.
 - Broken server-side: nested OR groups (a status OR-group + any other filter returns 0), `location`/`location_id`, `user` by name, `neq`. Hence one plain-AND query per value combination.
 - `created_at` comes back as `MM/DD/YYYY hh:mm AM/PM`.
-- After a successful send the CRM closes the message modal (no new banner seen by the user).
 - After reloading the unpacked extension, refresh the CRM tab or the old content script is dead.
+- Recorded live (2026-10-01): the open link (`data-remote` + `data-toggle="modal"` + `data-target="#modal-window"`) is a Bootstrap TOGGLE - clicking it while the window is open closes it. The page has TWO `#modal-window` elements (the first one is used). The SMS tab (`#smss`) is active by default. Send = `a#submit_sms_message.submit_message` whose own click handler does `if (sent) return; sent = true;` then `$.post` of `#new_sms_customer_message` (action `/customers/<id>/customer_messages.js`, data-remote) and on success evals the JS reply and inserts `.alert-success #flash_notice` ("Message is sended") before `#main_content`. `var sent = false` is reset by the window's inline scripts on every load.
+- After a send the window may stay open (refreshed) rather than close. v1.4.2 closes any open window (its X) before opening the next contact - this fixed the "every other contact fails" bug. Confirmed live: 5 sent, 0 skipped.
 
 ## Verification status
 - Mock-CRM harness (real extension files, stubbed `chrome.*`; lives in a session scratchpad, not the repo): 48 content-script, 4 page-reload, 29 popup, 20 filter-logic checks - all pass.
