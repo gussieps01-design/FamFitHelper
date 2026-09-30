@@ -105,9 +105,33 @@
   // always returns the first match, which is the hidden Email one - so any fill
   // that used getElementById directly was silently writing into the wrong,
   // invisible textarea. Scope the lookup to the SMS form specifically.
+  //
+  // The same ids can also appear on SEVERAL SMS forms at once (e.g. an old,
+  // hidden copy left behind when the CRM redraws its message window), so
+  // never trust getElementById here either: use the SMS form that's actually
+  // visible, falling back to the newest one.
+  function getSmsForm() {
+    const forms = Array.from(document.querySelectorAll('form[id="new_sms_customer_message"]'));
+    return forms.find((f) => isVisible(f.querySelector('[id="customer_message_message"]'))) || forms[forms.length - 1] || null;
+  }
+
   function getSmsTextarea() {
-    const smsForm = document.getElementById("new_sms_customer_message");
-    return smsForm ? smsForm.querySelector("#customer_message_message") : null;
+    const smsForm = getSmsForm();
+    return smsForm ? smsForm.querySelector('[id="customer_message_message"]') : null;
+  }
+
+  // Is a CRM message window (Bootstrap modal) showing?
+  function messageWindowOpen() {
+    return Array.from(document.querySelectorAll('#modal-window, .modal')).some(isVisible);
+  }
+
+  // Short description of the page's message-window state, added to skip
+  // reasons so a failure on the live CRM says what the page looked like.
+  function pageState() {
+    const forms = Array.from(document.querySelectorAll('form[id="new_sms_customer_message"]'));
+    const visible = forms.filter((f) => isVisible(f.querySelector('[id="customer_message_message"]'))).length;
+    const windows = Array.from(document.querySelectorAll('#modal-window, .modal')).filter(isVisible).length;
+    return `[page: ${forms.length} SMS form(s), ${visible} visible, ${windows} message window(s) open]`;
   }
 
   function findContactRowLink(contact) {
@@ -157,7 +181,7 @@
   // this contact's - guards against filling a stale modal left over from the
   // previous contact. Forms with no id in the action pass (can't tell).
   function smsFormCustomerId() {
-    const form = document.getElementById("new_sms_customer_message");
+    const form = getSmsForm();
     const m = ((form && form.getAttribute("action")) || "").match(/customers\/(\d+)/);
     return m ? m[1] : null;
   }
@@ -334,10 +358,8 @@
     // same contact's from an earlier attempt, even while hidden or briefly
     // still showing) would be filled instead of the real one.
     const STALE = "data-famfit-stale";
-    const oldTab = document.querySelector('a[href="#messages"]');
-    const oldBox = getSmsTextarea();
-    if (oldTab) oldTab.setAttribute(STALE, "1");
-    if (oldBox) oldBox.setAttribute(STALE, "1");
+    document.querySelectorAll('a[href="#messages"]').forEach((el) => el.setAttribute(STALE, "1"));
+    document.querySelectorAll('form[id="new_sms_customer_message"] [id="customer_message_message"]').forEach((el) => el.setAttribute(STALE, "1"));
     // Fresh = new nodes, or (if the CRM re-uses the same nodes) the form now
     // names THIS contact and its box has been emptied.
     const isFresh = (el) =>
@@ -351,32 +373,38 @@
       return;
     }
 
+    let step = "the message window to load";
     try {
-      await waitFor(() => {
-        const t = document.querySelector('a[href="#messages"]');
-        return isFresh(t) ? t : null;
-      }, 15000);
-      document.querySelector('a[href="#messages"]').click();
-      await waitFor(() => document.querySelector('a[href="#smss"]'), 8000);
-      document.querySelector('a[href="#smss"]').click();
+      // A fresh Messaging tab link (there can be leftover copies on the page).
+      const messagesTab = await waitFor(
+        () => Array.from(document.querySelectorAll('a[href="#messages"]')).find(isFresh) || null,
+        15000
+      );
+      const root = messagesTab.closest("#modal-window, .modal") || document;
+      messagesTab.click();
+      step = "the SMS tab";
+      const smsTab = await waitFor(() => root.querySelector('a[href="#smss"]'), 8000);
+      smsTab.click();
       // The CRM can redraw the window while loading; keep nudging it back to
       // the SMS tab until the SMS box is showing.
+      step = "the SMS box to show";
       let lastNudge = Date.now();
       await waitFor(() => {
         const t = getSmsTextarea();
         if (isFresh(t) && isVisible(t)) return t;
-        if (Date.now() - lastNudge > 1000 && document.querySelector('a[href="#smss"]')) {
+        if (Date.now() - lastNudge > 1000) {
           lastNudge = Date.now();
           showSmsTab();
         }
         return null;
       }, 10000);
+      step = "a box for the right customer";
       if (!smsFormBelongsTo(contact)) throw new Error("wrong contact in modal");
     } catch (e) {
       if (myRun !== runId) return;
       showBadge(`Couldn't open the message box for ${contact.name} - skipping.`, "#a33");
       awaitingSendFor = null;
-      await advance(myRun, { skipped: "message box didn't open", failure: true });
+      await advance(myRun, { skipped: `message box didn't open - gave up waiting for ${step} ${pageState()}`, failure: true });
       return;
     }
     if (myRun !== runId) return;
@@ -450,7 +478,7 @@
         if (myRun !== runId || awaitingSendFor !== contact) return;
         if (!sendBtn) {
           awaitingSendFor = null;
-          advance(myRun, { skipped: `auto-send didn't click Send - ${why}`, failure: true });
+          advance(myRun, { skipped: `auto-send didn't click Send - ${why} ${pageState()}`, failure: true });
           return;
         }
         // Record the send as in flight first, so a reload can't resend it.
@@ -488,7 +516,7 @@
   // id in case the button sits outside the form (ids are duplicated on this
   // page, so never trust a bare getElementById).
   function getSendButton() {
-    const smsForm = document.getElementById("new_sms_customer_message");
+    const smsForm = getSmsForm();
     const scoped = smsForm && smsForm.querySelector('[id="submit_sms_message"]');
     if (scoped) return scoped;
     return Array.from(document.querySelectorAll('[id="submit_sms_message"]')).find(isVisible) || null;
@@ -511,7 +539,9 @@
 
   // Bring the SMS tab of the message window back to the front.
   function showSmsTab() {
-    const root = document.getElementById("modal-window") || document;
+    // The open message window (the newest one if several), else the page.
+    const open = Array.from(document.querySelectorAll('#modal-window, .modal')).filter(isVisible);
+    const root = open[open.length - 1] || document.getElementById("modal-window") || document;
     const smsPane = root.querySelector("#smss");
     const messagesTab = root.querySelector('a[href="#messages"]');
     const smsTab = root.querySelector('a[href="#smss"]');
@@ -560,7 +590,7 @@
         }
         return;
       }
-      if (!sendClicked && isVisible(document.getElementById("modal-window"))) {
+      if (!sendClicked && messageWindowOpen()) {
         lastSeen = Date.now();
         if (tabFixes < MAX_TAB_FIXES && Date.now() - lastTabFix > 700) {
           tabFixes++;
@@ -575,7 +605,7 @@
         handleSendDetected();
       } else if (autoSend) {
         awaitingSendFor = null;
-        advance(myRun, { skipped: "message box closed before sending", failure: true });
+        advance(myRun, { skipped: `message box closed before sending ${pageState()}`, failure: true });
       } else {
         awaitingSendFor = null;
         activeRun = false;
@@ -620,7 +650,7 @@
     window.addEventListener("keydown", (e) => {
       if (!awaitingSendFor) return;
       if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) return;
-      const smsForm = document.getElementById("new_sms_customer_message");
+      const smsForm = getSmsForm();
       if (!smsForm || !smsForm.contains(document.activeElement)) return;
       e.preventDefault();
       e.stopPropagation();
