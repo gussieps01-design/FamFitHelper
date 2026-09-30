@@ -120,9 +120,40 @@
     return smsForm ? smsForm.querySelector('[id="customer_message_message"]') : null;
   }
 
-  // Is a CRM message window (Bootstrap modal) showing?
+  // A CRM message window (Bootstrap modal) that's actually on screen - an
+  // open modal covers the page; a closed one is display:none (an empty
+  // element with no height doesn't count).
+  function isWindowShown(el) {
+    return !!el && el.offsetHeight > 0 && el.getClientRects().length > 0;
+  }
+
+  function openMessageWindows() {
+    return Array.from(document.querySelectorAll("#modal-window, .modal")).filter(isWindowShown);
+  }
+
   function messageWindowOpen() {
-    return Array.from(document.querySelectorAll('#modal-window, .modal')).some(isVisible);
+    return openMessageWindows().length > 0;
+  }
+
+  // Close any open message window (click its X; Escape as a fallback) and
+  // wait until it's gone. True when no message window is showing.
+  async function closeMessageWindow() {
+    if (!messageWindowOpen()) return true;
+    const open = openMessageWindows();
+    for (const m of open) {
+      const x = m.querySelector('[data-dismiss="modal"]');
+      if (x) x.click();
+      else m.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true }));
+    }
+    try {
+      await waitFor(() => !messageWindowOpen(), 5000);
+    } catch (e) {
+      return false;
+    }
+    // Let the fade-out and backdrop finish before opening the next one.
+    try { await waitFor(() => !document.querySelector(".modal-backdrop"), 1500); } catch (e) { /* harmless */ }
+    await new Promise((r) => setTimeout(r, 300));
+    return true;
   }
 
   // Short description of the page's message-window state, added to skip
@@ -130,7 +161,7 @@
   function pageState() {
     const forms = Array.from(document.querySelectorAll('form[id="new_sms_customer_message"]'));
     const visible = forms.filter((f) => isVisible(f.querySelector('[id="customer_message_message"]'))).length;
-    const windows = Array.from(document.querySelectorAll('#modal-window, .modal')).filter(isVisible).length;
+    const windows = openMessageWindows().length;
     return `[page: ${forms.length} SMS form(s), ${visible} visible, ${windows} message window(s) open]`;
   }
 
@@ -352,6 +383,20 @@
     }
     showBadge(`Finding ${contact.name} (${index + 1} of ${batch.contacts.length})...`);
 
+    // The CRM's open link TOGGLES its message window (Bootstrap
+    // data-toggle="modal"): clicked while the previous contact's window is
+    // still showing - e.g. the CRM refreshed it after a send instead of
+    // closing it - it CLOSES the window instead of opening it. That made
+    // every other contact fail ("closed before sending"). So close any open
+    // message window first, the same way a person would (its X).
+    if (!(await closeMessageWindow())) {
+      if (myRun !== runId) return;
+      awaitingSendFor = null;
+      await advance(myRun, { skipped: `couldn't close the previous message window ${pageState()}`, failure: true });
+      return;
+    }
+    if (myRun !== runId) return;
+
     // Mark whatever modal is already in the page as stale, so the waits
     // below only succeed once the CRM has loaded FRESH content for this
     // contact - otherwise the leftover form (a previous contact's, or this
@@ -383,8 +428,13 @@
       const root = messagesTab.closest("#modal-window, .modal") || document;
       messagesTab.click();
       step = "the SMS tab";
-      const smsTab = await waitFor(() => root.querySelector('a[href="#smss"]'), 8000);
-      smsTab.click();
+      // Click the SMS tab - unless the SMS box is already showing.
+      const smsBoxShowing = () => { const t = getSmsTextarea(); return isFresh(t) && isVisible(t); };
+      const smsTab = await waitFor(
+        () => (smsBoxShowing() ? "showing" : root.querySelector('a[href="#smss"]') || document.querySelector('a[href="#smss"]:not([' + STALE + '])')),
+        8000
+      );
+      if (smsTab !== "showing") smsTab.click();
       // The CRM can redraw the window while loading; keep nudging it back to
       // the SMS tab until the SMS box is showing.
       step = "the SMS box to show";
@@ -487,6 +537,7 @@
         b.inFlight = index;
         await saveBatch(b);
         if (myRun !== runId || awaitingSendFor !== contact) return;
+        markSendClicked();
         sendBtn.click();
       }, 400);
       // If the CRM rejects the send, the box just stays open. Skip and keep
@@ -540,7 +591,7 @@
   // Bring the SMS tab of the message window back to the front.
   function showSmsTab() {
     // The open message window (the newest one if several), else the page.
-    const open = Array.from(document.querySelectorAll('#modal-window, .modal')).filter(isVisible);
+    const open = openMessageWindows();
     const root = open[open.length - 1] || document.getElementById("modal-window") || document;
     const smsPane = root.querySelector("#smss");
     const messagesTab = root.querySelector('a[href="#messages"]');
@@ -631,22 +682,22 @@
   function ensureSendListeners() {
     if (listenersStarted) return;
     listenersStarted = true;
-    window.addEventListener("click", (e) => {
+    // A human's Send. The CRM's own scripts may stop click events before
+    // they reach us, so also listen for the press itself and the form
+    // submitting, on both window and document.
+    const onSendPress = (e) => {
       if (!awaitingSendFor) return;
-      if (!(e.target.closest && e.target.closest('[id="submit_sms_message"]'))) return;
-      sendClicked = true;
-      sendClickedBox = getSmsTextarea();
-      sendClickedText = normText(sendClickedBox && sendClickedBox.value);
-      // A human's click: mark it in flight too, so a reload right now can't
-      // bring this contact back up to be texted again.
-      const idx = currentIndex;
-      getBatch().then((b) => {
-        if (b && b.owner === INSTANCE && b.index === idx && b.inFlight !== idx) {
-          b.inFlight = idx;
-          saveBatch(b);
-        }
-      });
-    }, true);
+      const t = e.target;
+      const isSend = e.type === "submit"
+        ? t && t.id === "new_sms_customer_message"
+        : t && t.closest && t.closest('[id="submit_sms_message"]');
+      if (isSend) markSendClicked();
+    };
+    for (const target of [window, document]) {
+      for (const type of ["pointerdown", "mousedown", "click", "submit"]) {
+        target.addEventListener(type, onSendPress, true);
+      }
+    }
     window.addEventListener("keydown", (e) => {
       if (!awaitingSendFor) return;
       if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) return;
@@ -655,8 +706,29 @@
       e.preventDefault();
       e.stopPropagation();
       const sendBtn = getSendButton();
-      if (sendBtn) sendBtn.click();
+      if (!sendBtn) return;
+      markSendClicked();
+      sendBtn.click();
     }, true);
+  }
+
+  // Record that Send was clicked for the contact awaiting a send. Called
+  // directly whenever the extension clicks Send itself (it can't rely on the
+  // page reporting its own click back), and by the listeners for a human's.
+  function markSendClicked() {
+    if (!awaitingSendFor || sendClicked) return;
+    sendClicked = true;
+    sendClickedBox = getSmsTextarea();
+    sendClickedText = normText(sendClickedBox && sendClickedBox.value);
+    // Mark it in flight too, so a reload right now can't bring this
+    // contact back up to be texted again.
+    const idx = currentIndex;
+    getBatch().then((b) => {
+      if (b && b.owner === INSTANCE && b.index === idx && b.inFlight !== idx) {
+        b.inFlight = idx;
+        saveBatch(b);
+      }
+    });
   }
 
   function ensureSendObserver() {
