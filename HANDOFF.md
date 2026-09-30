@@ -23,14 +23,13 @@
 ## Verification status
 - Mock-CRM harness (real extension files, stubbed `chrome.*`; lives in a session scratchpad, not the repo): 48 content-script, 4 page-reload, 29 popup, 20 filter-logic checks - all pass.
 - Live CRM, read-only: server-side filtering checked on 6 combinations - 0 missed, 0 wrong.
-- User-confirmed live: open-by-id + fill + advance for off-page contacts.
-- **Not yet verified live**: modal-close send detection, Ctrl+Enter, auto-send, the long-run engine (skip/stop/resume). Claude cannot drive the real popup or send real texts.
+- User-confirmed live: open-by-id + fill + advance for off-page contacts; on 2026-09-30 the user tested v1.2 on the live CRM and reported it working.
+- Claude cannot drive the real popup or send real texts; live checks are the user's.
 
 ## Next steps
-1. Reload the extension, refresh the CRM tab, click Load again (old saved contacts have no ids).
-2. Manual test, ~3 contacts, Auto-send off: Ctrl+Enter sends; it advances after each send; closing without sending keeps the contact, Start brings it back.
-3. Auto-send test, ~5 contacts, CRM tab visible in its own window; check the popup's "Last run" summary.
-4. Then long runs.
+- Merge PR #1 into master (the auto-mode classifier blocks Claude from merging without review).
+- Share `HOW-TO-USE.txt` with other staff; start with small batches.
+- Possible follow-up: after Stop, Start re-runs the loaded list from the top (documented; not guarded in code).
 
 ## Known gaps
 - Click Send, CRM rejects it, then close the box -> counted as sent (rare now that no-phone contacts are excluded).
