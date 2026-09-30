@@ -14,8 +14,9 @@ PART 1 - INSTALL (one time per computer)
 ---------------------------------------------
 
 1. Get the files:
-   - Go to https://github.com/gussieps01-design/FamFitHelper
-   - Click the green "Code" button, then "Download ZIP".
+   - Go to https://github.com/gussieps01-design/FamFitHelper/releases/latest
+   - Under "Assets", click the file named
+     FamFitHelper-Chrome-Extension-....zip to download it.
    - Unzip it somewhere you'll keep it (for example Documents).
      Don't delete this folder later - Chrome runs the extension from it.
 
@@ -25,7 +26,7 @@ PART 1 - INSTALL (one time per computer)
 3. Turn on "Developer mode" (switch in the top-right corner).
 
 4. Click "Load unpacked" and choose the "chrome-extension" folder
-   inside the folder you unzipped.
+   inside the folder you unzipped (the one that has manifest.json in it).
 
 5. Click the puzzle-piece icon at the top right of Chrome and pin
    "FamFitHelper CRM Assist" so its icon is always visible.
@@ -51,6 +52,10 @@ PART 2 - SEND A BATCH OF TEXTS
 
 4. (Optional) "Text how many": type a number to only text the first
    that many. Leave it empty to text everyone loaded.
+
+   "Days" box (default 7): anyone texted from this computer within
+   that many days is skipped, so nobody gets texted too often.
+   Change it to any number of days, or 0 to turn it off.
 
 5. Pick a message template. Check the text - {{first_name}}, {{staff}}
    and {{location}} get filled in for each person. If some people
@@ -81,10 +86,9 @@ PART 3 - GOOD TO KNOW
 ---------------------------------------------
 
 - STOP: click the icon, then "Stop". That ENDS the batch for good.
-  Careful: clicking "Start batch" after Stop starts the loaded list
-  over from the top, so people already texted would get it again.
-  After a Stop, click "Load matching contacts" with different filters
-  (or lower "Text how many") before starting again.
+  Clicking "Start batch" after Stop starts the loaded list over from
+  the top - people already texted are skipped by the "Days" setting
+  (unless you set it to 0).
 - To text a DIFFERENT list: click "Stop", then Load and Start.
 - If a batch pauses by itself (see below), "Start batch" picks up
   where it left off - it never re-texts people already sent.
@@ -104,7 +108,8 @@ PART 3 - GOOD TO KNOW
 UPDATING TO A NEWER VERSION
 ---------------------------------------------
 
-1. Download the ZIP again and replace the old folder's contents.
+1. Download the newest ZIP from the releases page (same link as above)
+   and replace the old folder's contents with it.
 2. Go to chrome://extensions and click the reload arrow on
    FamFitHelper CRM Assist.
 3. Refresh the CRM tab (F5), then click "Load matching contacts" again.

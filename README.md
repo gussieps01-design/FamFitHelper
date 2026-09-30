@@ -7,13 +7,14 @@ Tools for texting gym customers from the Healthy Image Fitness CRM using reusabl
 
 **New here? Read [HOW-TO-USE.txt](HOW-TO-USE.txt)** for step-by-step install and use instructions.
 
-## Chrome extension (v1.2)
+## Chrome extension (v1.3)
 
-Install: download this repo, go to `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick the `chrome-extension` folder. Full details are in [HOW-TO-USE.txt](HOW-TO-USE.txt) and [chrome-extension/README.md](chrome-extension/README.md).
+**Download:** get `FamFitHelper-Chrome-Extension-*.zip` from the [latest release](../../releases/latest). It contains just the extension and the how-to note. Unzip it, go to `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick the `chrome-extension` folder. Full details are in [HOW-TO-USE.txt](HOW-TO-USE.txt) and [chrome-extension/README.md](chrome-extension/README.md).
 
 What it does:
 - **Finds who to text across the whole CRM.** Filter by Status, Priority, Location, Staff, idle days and sign-up date (pick several values per filter). The CRM itself does the filtering, so every customer is searched, not just the most recent ones. It uses your existing CRM login, so there's nothing extra to sign in to.
 - **Leaves out people who shouldn't be texted.** Contacts marked Dead, unsubscribed, with a bounced phone or no phone are skipped automatically, and a phone number shared by several customers is only texted once.
+- **Re-text cooldown.** Choose how many days must pass before the same person can be texted again (default 7, 0 = off). It's checked at Load and again right before each text.
 - **Fills in each message for you.** It opens each customer's SMS box and fills in the template with `{{first_name}}`, `{{last_name}}`, `{{staff}}` and `{{location}}`, with optional fallbacks for Staff and Location.
 - **Two ways to send:**
   - *Manual:* review each message, then click Send (or press Ctrl+Enter). It moves on to the next person as soon as the CRM confirms the send.
@@ -27,7 +28,7 @@ What it does:
 
 ## Desktop app
 
-Grab `FamFitHelper.exe` from the [latest release](../../releases/latest) and double-click it. No install and no Python required.
+Grab `FamFitHelper.exe` from the [v1.1.0 release](../../releases/tag/v1.1.0) and double-click it. No install and no Python required.
 
 - Reusable templates with `{{first_name}}`, `{{staff}}`, `{{location}}` and `{{appointment_date}}`.
 - Clipboard auto-detect for names and phone numbers, auto-copy of the finished message, and an optional auto-paste hotkey (never clicks Send).

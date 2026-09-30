@@ -41,6 +41,12 @@ function numOrNull(id) {
   return v === "" ? null : Number(v);
 }
 
+// Re-text cooldown in days: blank/invalid -> 7, negative -> 0 (off).
+function cooldownDaysValue() {
+  const n = numOrNull("cooldownDays");
+  return n === null || isNaN(n) ? 7 : Math.max(0, n);
+}
+
 async function sendToActiveTab(message) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url || !tab.url.includes("crm.healthyimagefitness.com")) {
@@ -107,6 +113,7 @@ function collectFormState() {
     location: document.getElementById("location").value,
     autoSend: document.getElementById("autoSend").checked,
     delaySec: document.getElementById("delaySec").value,
+    cooldownDays: document.getElementById("cooldownDays").value,
     textCount: document.getElementById("textCount").value,
     loadedContacts,
     loadedSummary: loadedSummaryEl.textContent,
@@ -136,6 +143,7 @@ async function restoreFormState() {
   templateText.value = state.templateText || FAMFIT_TEMPLATES[0].text;
   document.getElementById("autoSend").checked = !!state.autoSend;
   document.getElementById("delaySec").value = state.delaySec || "5";
+  document.getElementById("cooldownDays").value = state.cooldownDays != null && state.cooldownDays !== "" ? state.cooldownDays : "7";
   document.getElementById("textCount").value = state.textCount || "";
   if (state.loadedContacts && state.loadedContacts.length) {
     loadedContacts = state.loadedContacts;
@@ -180,7 +188,7 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
 [
   "fStatus", "fPriority", "fLocation", "fStaff",
   "fIdleMin", "fIdleMax", "fSignedWithin", "fMaxPages",
-  "staff", "location", "autoSend", "delaySec", "textCount",
+  "staff", "location", "autoSend", "delaySec", "cooldownDays", "textCount",
 ].forEach((id) => {
   document.getElementById(id).addEventListener("change", saveFormState);
 });
@@ -216,17 +224,19 @@ document.getElementById("loadBtn").addEventListener("click", async () => {
   };
   const maxPages = numOrNull("fMaxPages") || 20;
   loadedSummaryEl.textContent = "Searching CRM (see badge on the page)...";
-  const resp = await sendToActiveTab({ type: "FAMFIT_LOAD_FILTERED", filters, maxPages });
+  const cooldownDays = cooldownDaysValue();
+  const resp = await sendToActiveTab({ type: "FAMFIT_LOAD_FILTERED", filters, maxPages, cooldownDays });
   if (!resp) return;
   if (!resp.ok) {
     loadedSummaryEl.textContent = "Search failed: " + resp.error;
     return;
   }
   loadedContacts = resp.matches;
-  loadedSummaryEl.textContent = resp.complete
+  const recentNote = resp.recentlyTexted ? ` ${resp.recentlyTexted} skipped - texted in the last ${cooldownDays} day(s).` : "";
+  loadedSummaryEl.textContent = (resp.complete
     ? `${resp.matches.length} contact(s) loaded - all ${resp.total} CRM match(es) searched, ${resp.excluded} auto-excluded (Dead/bounced/unsubscribed/no phone)` +
       (resp.duplicates ? `, ${resp.duplicates} duplicate phone(s) dropped.` : ".")
-    : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`;
+    : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`) + recentNote;
   updateTextCountLabel();
   await saveFormState();
 });
@@ -288,6 +298,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     location: document.getElementById("location").value,
     autoSend,
     delaySec: Math.max(1, numOrNull("delaySec") || 5),
+    cooldownDays: cooldownDaysValue(),
     index: 0,
   };
   await chrome.storage.local.set({ famfitBatch: batch });

@@ -189,6 +189,38 @@
   const LAST_RUN_KEY = "famfitLastRun";
   const INSTANCE = Math.random().toString(36).slice(2);
 
+  // Re-text cooldown: when each phone was last texted through this
+  // extension ({last-10-digits: epoch ms}), in this browser. Entries older
+  // than a year are dropped so it can't grow forever.
+  const SENT_LOG_KEY = "famfitSentLog";
+  const SENT_LOG_MAX_AGE_MS = 365 * 86400000;
+
+  async function getSentLog() {
+    return (await chrome.storage.local.get(SENT_LOG_KEY))[SENT_LOG_KEY] || {};
+  }
+
+  async function recordSent(phone) {
+    const key = normalizePhone(phone);
+    if (!key) return;
+    const log = await getSentLog();
+    const cutoff = Date.now() - SENT_LOG_MAX_AGE_MS;
+    for (const k of Object.keys(log)) if (log[k] < cutoff) delete log[k];
+    log[key] = Date.now();
+    await chrome.storage.local.set({ [SENT_LOG_KEY]: log });
+  }
+
+  // Days since this phone was last texted, if that's within the cooldown;
+  // otherwise null.
+  function textedWithin(log, phone, cooldownDays) {
+    if (!cooldownDays || cooldownDays <= 0) return null;
+    const at = log[normalizePhone(phone)];
+    if (!at) return null;
+    const ageMs = Date.now() - at;
+    return ageMs < cooldownDays * 86400000 ? Math.floor(ageMs / 86400000) : null;
+  }
+
+  const daysAgoText = (d) => (d === 0 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`);
+
   // Bumped by Start and Stop so timers from an old/stopped run (auto-send
   // click, advance-to-next) can't fire after the user hit Stop.
   let runId = 0;
@@ -246,6 +278,7 @@
     if (outcome.sent) {
       batch.stats.sent++;
       batch.consecutiveFailures = 0;
+      await recordSent(contact.phone);
     } else {
       batch.stats.skipped.push({ name: contact.name, reason: outcome.skipped });
       if (outcome.failure) batch.consecutiveFailures = (batch.consecutiveFailures || 0) + 1;
@@ -281,6 +314,13 @@
     // confirmed - it may well have gone out, so never send it again.
     if (batch.inFlight === index) {
       await advance(myRun, { skipped: "send not confirmed before the page reloaded - check it in the CRM", failure: false });
+      return;
+    }
+    // Checked again right before texting (not just at Load): catches people
+    // texted since the list was loaded, e.g. Stop then Start on the same list.
+    const recent = textedWithin(await getSentLog(), contact.phone, batch.cooldownDays);
+    if (recent !== null) {
+      await advance(myRun, { skipped: `already texted ${daysAgoText(recent)}`, failure: false });
       return;
     }
     showBadge(`Finding ${contact.name} (${index + 1} of ${batch.contacts.length})...`);
@@ -733,8 +773,10 @@
     };
   }
 
-  async function searchFilteredContacts(filters, maxPages, progressCb) {
+  async function searchFilteredContacts(filters, maxPages, progressCb, cooldownDays) {
     const maps = await loadMaps();
+    const sentLog = await getSentLog();
+    let recentlyTexted = 0;
     // Selected statuses with no known code (maps from an older scan) -> re-probe once.
     if ((filters.status || []).some((s) => maps.statusCodes[s] === undefined)) {
       maps.statusCodes = { ...maps.statusCodes, ...(await probeStatusCodes()) };
@@ -773,6 +815,10 @@
             continue;
           }
           if (!contactMatchesFilters(c, filters)) continue;
+          if (textedWithin(sentLog, c.phone, cooldownDays) !== null) {
+            recentlyTexted++;
+            continue;
+          }
           // Several customer records can share one phone - text it once.
           const phoneKey = normalizePhone(c.phone);
           if (seenPhones.has(phoneKey)) {
@@ -786,7 +832,7 @@
         if (!contacts.length || page * 100 >= comboTotal) break;
       }
     }
-    return { matches, pagesSearched, total, excluded, duplicates, serverFiltered, complete };
+    return { matches, pagesSearched, total, excluded, duplicates, recentlyTexted, serverFiltered, complete };
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -803,7 +849,7 @@
       showBadge("Searching CRM...");
       searchFilteredContacts(message.filters, message.maxPages || 5, (page, found, total) => {
         showBadge(`Searching... ${page} page(s) read, ${found} match(es) so far.`);
-      })
+      }, message.cooldownDays)
         .then((result) => {
           showBadge(
             result.complete

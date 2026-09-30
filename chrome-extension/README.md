@@ -1,4 +1,4 @@
-# FamFitHelper CRM Assist (Chrome extension, v1.2)
+# FamFitHelper CRM Assist (Chrome extension, v1.3)
 
 Texts a filtered list of CRM customers one at a time from a message template. By default you click Send for each person and it moves on to the next. The opt-in **Auto-send** mode sends through the whole list by itself.
 
@@ -35,6 +35,7 @@ Closing the popup is safe; everything is saved and restored when it reopens.
 
 - **Searching**: Status, Priority, Staff, Idle and Signed-within are sent to the CRM as filters, so the whole customer list is searched. Location is checked by the extension. Every result is re-checked against your filters.
 - **Always left out**: contacts marked Dead, unsubscribed, with a bounced phone, or with no phone. A phone number shared by several customers is texted once.
+- **Re-text cooldown** (the "days" box, default 7, 0 = off): anyone texted within that many days is left out at Load and skipped again right before texting. That also covers running the same list twice. The record of who was texted when is kept in this Chrome profile only, so it doesn't know about texts sent from other computers or directly in the CRM.
 - **Opening contacts**: CRM-loaded contacts are opened by their customer id, from any page. Pasted contacts have no id and must be visible on the current customer list page.
 - **"Sent"** means Send was clicked for that contact and then the CRM closed the message box or showed its green banner. Closing the box *without* clicking Send leaves that contact in place; click Start to bring them back.
 - **Safety checks**:
@@ -48,7 +49,7 @@ Closing the popup is safe; everything is saved and restored when it reopens.
   - Only one CRM tab drives a run.
 - **Start vs. Stop**:
   - **Start** resumes a stored batch where it left off.
-  - **Stop** ends it and saves the summary. After a Stop, Start begins a *new* batch from the loaded list, from the top, so Load a new list first to avoid re-texting people.
+  - **Stop** ends it and saves the summary. After a Stop, Start begins a *new* batch from the loaded list, from the top. People already texted are skipped by the re-text cooldown, unless it's set to 0.
 
 ## Limits
 
