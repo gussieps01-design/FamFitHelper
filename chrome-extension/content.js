@@ -15,6 +15,9 @@
 
 (function () {
   const STATUS_ID = "famfit-status-badge";
+  // Shown on every badge, so it's obvious which version is actually loaded.
+  let VERSION = "";
+  try { VERSION = "v" + chrome.runtime.getManifest().version; } catch (e) { /* not in an extension */ }
   let awaitingSendFor = null; // {name, phone} of the contact whose modal is currently open and pre-filled
   let observerStarted = false;
 
@@ -32,7 +35,7 @@
     el.style.background = color || "#2B2724";
     el.innerHTML = "";
     const line = document.createElement("div");
-    line.textContent = "FamFitHelper: " + text;
+    line.textContent = `FamFitHelper${VERSION ? " " + VERSION : ""}: ` + text;
     el.appendChild(line);
   }
 
@@ -489,6 +492,11 @@
   // Set when Send is clicked (by mouse, Ctrl+Enter, or auto-send) for the
   // contact currently awaiting a send. A send only counts as done after this.
   let sendClicked = false;
+  // The SMS box and its text at the moment Send was clicked - to recognise
+  // the CRM refreshing the message window after a send (fresh empty box)
+  // rather than closing it.
+  let sendClickedBox = null;
+  let sendClickedText = "";
 
   function fillBox(box, text) {
     box.value = text;
@@ -534,6 +542,13 @@
       const box = getSmsTextarea();
       if (isVisible(box)) {
         lastSeen = Date.now();
+        // After Send: the CRM refreshing the window (a new box, or the
+        // message cleared out of it) means the send went through.
+        if (sendClicked && sendClickedText && (box !== sendClickedBox || !normText(box.value))) {
+          stop();
+          handleSendDetected();
+          return;
+        }
         if (!sendClicked && box !== filledBox && rendered && !normText(box.value) && smsFormBelongsTo(contact)) {
           fillBox(box, rendered);
           filledBox = box;
@@ -585,6 +600,8 @@
       if (!awaitingSendFor) return;
       if (!(e.target.closest && e.target.closest('[id="submit_sms_message"]'))) return;
       sendClicked = true;
+      sendClickedBox = getSmsTextarea();
+      sendClickedText = normText(sendClickedBox && sendClickedBox.value);
       // A human's click: mark it in flight too, so a reload right now can't
       // bring this contact back up to be texted again.
       const idx = currentIndex;

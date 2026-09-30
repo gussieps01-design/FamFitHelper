@@ -4,6 +4,11 @@ const statusEl = document.getElementById("status");
 // Batch progress / last-run summary get their own line: statusEl is
 // overwritten by the dropdown load every time the popup opens.
 const runStatusEl = document.getElementById("runStatus");
+
+// Show the loaded version in the popup title, so an old copy is easy to spot.
+try {
+  document.querySelector("h3").textContent += ` v${chrome.runtime.getManifest().version}`;
+} catch (e) { /* not running as an extension */ }
 const loadedSummaryEl = document.getElementById("loadedSummary");
 const textCountOfEl = document.getElementById("textCountOf");
 

@@ -108,8 +108,16 @@ PART 3 - GOOD TO KNOW
 UPDATING TO A NEWER VERSION
 ---------------------------------------------
 
-1. Download the newest ZIP from the releases page (same link as above)
-   and replace the old folder's contents with it.
-2. Go to chrome://extensions and click the reload arrow on
-   FamFitHelper CRM Assist.
-3. Refresh the CRM tab (F5), then click "Load matching contacts" again.
+1. Download the newest ZIP from the releases page (same link as above).
+2. Go to chrome://extensions. On FamFitHelper CRM Assist, click
+   "Remove".
+3. Click "Load unpacked" and choose the NEW "chrome-extension" folder
+   (the one from the ZIP you just downloaded).
+4. Check the version: chrome://extensions and the popup's title both
+   show it (for example "v1.3.3"). The box on the CRM page shows it too.
+5. Refresh the CRM tab (F5), then click "Load matching contacts" again.
+
+(Removing the extension also clears its settings and the "Days" record
+of who was texted. If you'd rather keep them: copy the new files OVER
+the old folder that Chrome is already using, then click the reload
+arrow on the extension instead of Remove / Load unpacked.)
