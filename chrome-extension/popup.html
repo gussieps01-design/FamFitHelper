@@ -17,7 +17,8 @@
   legend { font-size: 12px; font-weight: bold; padding: 0 4px; }
   button { margin-top: 8px; width: 100%; padding: 8px; border: none; border-radius: 3px; background: #C6552B; color: #fff; font-weight: bold; cursor: pointer; }
   button.secondary { background: #fff; color: #2B2724; border: 1px solid #C9C0B2; }
-  #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  #status, #runStatus { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  #runStatus { max-height: 160px; overflow-y: auto; }
   details summary { font-size: 12px; cursor: pointer; margin-top: 8px; color: #8A8378; }
 </style>
 </head>
@@ -65,7 +66,7 @@
       </div>
       <div>
         <label>Search up to N pages</label>
-        <input id="fMaxPages" type="number" value="5">
+        <input id="fMaxPages" type="number" value="20" title="Each page is 100 CRM matches">
       </div>
     </div>
     <button id="loadBtn">Load matching contacts</button>
@@ -110,10 +111,15 @@
     <input type="checkbox" id="autoSend" style="width:auto;">
     <span>Auto-send each message automatically (skips manual click/review per contact)</span>
   </label>
+  <div class="row" style="align-items:center;">
+    <div style="flex:0 0 70px;"><input id="delaySec" type="number" min="1" value="5"></div>
+    <div class="muted" style="margin:0;">seconds between auto-sends. Keep the CRM tab visible (its own window is fine) - Chrome slows hidden tabs.</div>
+  </div>
 
   <button id="startBtn">Start batch (pre-fill first contact)</button>
   <button id="stopBtn" class="secondary">Stop</button>
   <div id="status"></div>
+  <div id="runStatus"></div>
 
   <script src="templates.js"></script>
   <script src="popup.js"></script>

@@ -1,6 +1,9 @@
 const templateSelect = document.getElementById("templateSelect");
 const templateText = document.getElementById("templateText");
 const statusEl = document.getElementById("status");
+// Batch progress / last-run summary get their own line: statusEl is
+// overwritten by the dropdown load every time the popup opens.
+const runStatusEl = document.getElementById("runStatus");
 const loadedSummaryEl = document.getElementById("loadedSummary");
 const textCountOfEl = document.getElementById("textCountOf");
 
@@ -103,6 +106,7 @@ function collectFormState() {
     staff: document.getElementById("staff").value,
     location: document.getElementById("location").value,
     autoSend: document.getElementById("autoSend").checked,
+    delaySec: document.getElementById("delaySec").value,
     textCount: document.getElementById("textCount").value,
     loadedContacts,
     loadedSummary: loadedSummaryEl.textContent,
@@ -125,12 +129,13 @@ async function restoreFormState() {
   document.getElementById("fIdleMin").value = state.fIdleMin || "";
   document.getElementById("fIdleMax").value = state.fIdleMax || "";
   document.getElementById("fSignedWithin").value = state.fSignedWithin || "";
-  document.getElementById("fMaxPages").value = state.fMaxPages || "5";
+  document.getElementById("fMaxPages").value = state.fMaxPages || "20";
   if (state.templateIndex !== undefined && FAMFIT_TEMPLATES[state.templateIndex]) {
     templateSelect.value = state.templateIndex;
   }
   templateText.value = state.templateText || FAMFIT_TEMPLATES[0].text;
   document.getElementById("autoSend").checked = !!state.autoSend;
+  document.getElementById("delaySec").value = state.delaySec || "5";
   document.getElementById("textCount").value = state.textCount || "";
   if (state.loadedContacts && state.loadedContacts.length) {
     loadedContacts = state.loadedContacts;
@@ -175,7 +180,7 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
 [
   "fStatus", "fPriority", "fLocation", "fStaff",
   "fIdleMin", "fIdleMax", "fSignedWithin", "fMaxPages",
-  "staff", "location", "autoSend", "textCount",
+  "staff", "location", "autoSend", "delaySec", "textCount",
 ].forEach((id) => {
   document.getElementById(id).addEventListener("change", saveFormState);
 });
@@ -209,7 +214,7 @@ document.getElementById("loadBtn").addEventListener("click", async () => {
     idleMax: numOrNull("fIdleMax"),
     signedWithinDays: numOrNull("fSignedWithin"),
   };
-  const maxPages = numOrNull("fMaxPages") || 5;
+  const maxPages = numOrNull("fMaxPages") || 20;
   loadedSummaryEl.textContent = "Searching CRM (see badge on the page)...";
   const resp = await sendToActiveTab({ type: "FAMFIT_LOAD_FILTERED", filters, maxPages });
   if (!resp) return;
@@ -218,19 +223,48 @@ document.getElementById("loadBtn").addEventListener("click", async () => {
     return;
   }
   loadedContacts = resp.matches;
-  loadedSummaryEl.textContent = `${resp.matches.length} contact(s) loaded (searched ${resp.pagesSearched} page(s) of ${resp.total} total, ${resp.excluded} auto-excluded).`;
+  loadedSummaryEl.textContent = resp.complete
+    ? `${resp.matches.length} contact(s) loaded - all ${resp.total} CRM match(es) searched, ${resp.excluded} auto-excluded (Dead/bounced/unsubscribed/no phone)` +
+      (resp.duplicates ? `, ${resp.duplicates} duplicate phone(s) dropped.` : ".")
+    : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`;
   updateTextCountLabel();
   await saveFormState();
 });
 
 document.getElementById("usePastedBtn").addEventListener("click", async () => {
-  loadedContacts = parseContacts(document.getElementById("contacts").value);
+  const seenPhones = new Set();
+  loadedContacts = parseContacts(document.getElementById("contacts").value).filter((c) => {
+    const key = c.phone.replace(/\D/g, "").slice(-10);
+    if (!key) return true;
+    if (seenPhones.has(key)) return false;
+    seenPhones.add(key);
+    return true;
+  });
   loadedSummaryEl.textContent = `${loadedContacts.length} contact(s) from pasted list.`;
   updateTextCountLabel();
   await saveFormState();
 });
 
+function runSummary(stats, total) {
+  const s = stats || { sent: 0, skipped: [] };
+  let text = `${s.sent} sent, ${s.skipped.length} skipped of ${total}.`;
+  if (s.skipped.length) text += "\nSkipped:\n" + s.skipped.map((x) => `- ${x.name}: ${x.reason}`).join("\n");
+  return text;
+}
+
 document.getElementById("startBtn").addEventListener("click", async () => {
+  // A stored batch is RESUMED where it left off - never restarted from
+  // contact 1, which would re-text everyone already sent. Stop clears it.
+  const existing = (await chrome.storage.local.get("famfitBatch")).famfitBatch;
+  if (existing) {
+    if (existing.autoSend && !confirm(`Resume AUTO-SEND at contact ${existing.index + 1} of ${existing.contacts.length}?\n\n(To start a different batch instead, click Stop first.)`)) {
+      statusEl.textContent = "Cancelled.";
+      return;
+    }
+    const resp = await sendToActiveTab({ type: "FAMFIT_START" });
+    if (resp && resp.ok) runStatusEl.textContent = `Resumed at contact ${existing.index + 1} of ${existing.contacts.length}. (Click Stop first to start a new batch.)`;
+    return;
+  }
   if (!loadedContacts || !loadedContacts.length) {
     statusEl.textContent = "Load contacts from the CRM, or paste a list, first.";
     return;
@@ -253,6 +287,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     staff: document.getElementById("staff").value,
     location: document.getElementById("location").value,
     autoSend,
+    delaySec: Math.max(1, numOrNull("delaySec") || 5),
     index: 0,
   };
   await chrome.storage.local.set({ famfitBatch: batch });
@@ -263,17 +298,29 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     return; // sendToActiveTab already put the reason in the status line
   }
   statusEl.textContent = `Started. ${contactsToSend.length} of ${loadedContacts.length} loaded contact(s) queued.`;
+  runStatusEl.textContent = "";
 });
 
 document.getElementById("stopBtn").addEventListener("click", async () => {
+  const b = (await chrome.storage.local.get("famfitBatch")).famfitBatch;
+  if (b) {
+    const stats = b.stats || { sent: 0, skipped: [] };
+    await chrome.storage.local.set({
+      famfitLastRun: { finishedAt: Date.now(), total: b.contacts.length, sent: stats.sent, skipped: stats.skipped, stoppedAt: b.index },
+    });
+  }
   await chrome.storage.local.remove("famfitBatch");
   await sendToActiveTab({ type: "FAMFIT_STOP" });
   statusEl.textContent = "Stopped.";
+  runStatusEl.textContent = b ? `Stopped at contact ${b.index + 1} of ${b.contacts.length}: ${runSummary(b.stats, b.contacts.length)}` : "";
 });
 
-chrome.storage.local.get("famfitBatch", (data) => {
-  if (data.famfitBatch) {
-    const b = data.famfitBatch;
-    statusEl.textContent = `Batch in progress: contact ${b.index + 1} of ${b.contacts.length}.`;
+chrome.storage.local.get(["famfitBatch", "famfitLastRun"], (data) => {
+  const b = data.famfitBatch;
+  if (b) {
+    runStatusEl.textContent = `Batch in progress: contact ${b.index + 1} of ${b.contacts.length} - ${runSummary(b.stats, b.contacts.length)}\nStart resumes it; Stop ends it.`;
+  } else if (data.famfitLastRun) {
+    const r = data.famfitLastRun;
+    runStatusEl.textContent = `Last run (${new Date(r.finishedAt).toLocaleString()}): ${runSummary({ sent: r.sent, skipped: r.skipped }, r.total)}`;
   }
 });

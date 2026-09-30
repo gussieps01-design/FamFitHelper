@@ -1,23 +1,17 @@
 // FamFitHelper CRM Assist - content script
 //
 // What this does: pre-fills the SMS textarea for one contact at a time.
-// By default it NEVER clicks the CRM's own "Send message" button - it only
-// watches for the CRM's own success signal (the green flash banner it shows
-// after a send) and, once that's seen, moves on to pre-filling the next
-// contact. The actual send is a manual, deliberate click by a human on the
-// CRM's real page, every single time.
+// By default it NEVER clicks the CRM's own "Send message" button - a human
+// clicks Send (or Ctrl+Enter), and once the send is seen to finish it moves
+// on to pre-filling the next contact.
 //
 // Exception: if the batch has autoSend: true (set via the popup's "Auto-send"
 // checkbox, opt-in and confirmed per batch), this script clicks the real
-// Send button itself for every contact, unattended. Same success-banner
-// detection gates advancing either way.
+// Send button itself for every contact, unattended - see "batch engine".
 //
-// How the CRM's send works (reverse engineered from its own JS, never
-// triggered by this script): clicking "Send message" runs
-//   $.post({ url: <form action>, data: <form fields>, dataType: 'script' })
-// and on success inserts a banner: #flash_notice inside .alert-success
-// before #main_content. That banner is this script's only "it was sent"
-// signal - a MutationObserver watches for it appearing.
+// "Sent" = Send was clicked for this contact AND then either the CRM closed
+// the message modal (what the live CRM does) or showed its green
+// #flash_notice / .alert-success banner.
 
 (function () {
   const STATUS_ID = "famfit-status-badge";
@@ -75,19 +69,27 @@
     if (el) el.remove();
   }
 
+  // Re-checks on every DOM change (MutationObserver callbacks aren't slowed
+  // when the tab is in the background, unlike timers), with a slow interval
+  // as a fallback. The deadline is only enforced on the fallback tick, so a
+  // throttled background tab fails late rather than falsely.
   function waitFor(checkFn, timeoutMs) {
     return new Promise((resolve, reject) => {
       const start = Date.now();
-      const iv = setInterval(() => {
+      let done = false;
+      const finish = (fn, v) => { done = true; obs.disconnect(); clearInterval(iv); fn(v); };
+      const check = () => {
+        if (done) return;
         const result = checkFn();
-        if (result) {
-          clearInterval(iv);
-          resolve(result);
-        } else if (Date.now() - start > timeoutMs) {
-          clearInterval(iv);
-          reject(new Error("timeout"));
-        }
-      }, 200);
+        if (result) finish(resolve, result);
+      };
+      const obs = new MutationObserver(check);
+      obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+      const iv = setInterval(() => {
+        check();
+        if (!done && Date.now() - start > timeoutMs) finish(reject, new Error("timeout"));
+      }, 250);
+      check();
     });
   }
 
@@ -167,57 +169,163 @@
     return !!contact.id && smsFormCustomerId() === String(contact.id);
   }
 
+  // ---------- batch engine ----------
+  // Built to run unattended for as long as the list is:
+  //  - Every step re-reads the batch from storage and checks this tab still
+  //    OWNS the run, so a second CRM tab can never run the same batch.
+  //  - A contact that can't be opened/filled/confirmed is skipped and logged
+  //    instead of pausing the whole run; MAX_CONSECUTIVE_FAILURES in a row
+  //    (expired login, CRM change) stops the run rather than burning
+  //    through the list.
+  //  - `inFlight` marks a contact whose Send was clicked but not yet
+  //    confirmed. If the page reloads right then, that contact is skipped on
+  //    resume (logged as unconfirmed) - never texted twice.
+  //  - A reloaded page auto-resumes an auto-send run that was active in the
+  //    last AUTO_RESUME_WINDOW_MS.
+  const MAX_CONSECUTIVE_FAILURES = 3;
+  const SEND_CONFIRM_TIMEOUT_MS = 20000;
+  const AUTO_RESUME_WINDOW_MS = 10 * 60 * 1000;
+  const RESUME_STALE_MS = 15000; // don't take over a run another tab is actively driving
+  const LAST_RUN_KEY = "famfitLastRun";
+  const INSTANCE = Math.random().toString(36).slice(2);
+
   // Bumped by Start and Stop so timers from an old/stopped run (auto-send
   // click, advance-to-next) can't fire after the user hit Stop.
   let runId = 0;
+  let activeRun = false; // this tab is currently driving a batch
+  let currentIndex = -1; // batch index of the contact awaiting a send
 
-  async function openAndFillContact(batch, index, myRun) {
-    if (myRun !== runId) return;
+  async function getBatch() {
+    return (await chrome.storage.local.get("famfitBatch")).famfitBatch || null;
+  }
+
+  async function saveBatch(batch) {
+    batch.lastActivity = Date.now();
+    await chrome.storage.local.set({ famfitBatch: batch });
+  }
+
+  // The batch as this run should see it, or null if the run is over, was
+  // stopped, or another tab took it over.
+  async function ownedBatch(myRun) {
+    if (myRun !== runId) return null;
+    const batch = await getBatch();
+    if (!batch || batch.owner !== INSTANCE || myRun !== runId) {
+      if (myRun === runId) activeRun = false;
+      return null;
+    }
+    return batch;
+  }
+
+  function skippedList(stats) {
+    const s = (stats && stats.skipped) || [];
+    if (!s.length) return "";
+    const shown = s.slice(0, 8).map((x) => `${x.name} (${x.reason})`).join("; ");
+    return ` Skipped: ${shown}${s.length > 8 ? `; +${s.length - 8} more (see popup)` : ""}.`;
+  }
+
+  async function finishRun(batch) {
+    const stats = batch.stats || { sent: 0, skipped: [] };
+    activeRun = false;
+    awaitingSendFor = null;
+    await chrome.storage.local.set({
+      [LAST_RUN_KEY]: { finishedAt: Date.now(), total: batch.contacts.length, sent: stats.sent, skipped: stats.skipped },
+    });
+    await chrome.storage.local.remove("famfitBatch");
+    showBadge(`Done: ${stats.sent} sent, ${stats.skipped.length} skipped of ${batch.contacts.length}.${skippedList(stats)}`, "#2a7a2a");
+  }
+
+  // Move past the current contact. outcome: {sent: true} or
+  // {skipped: "<reason>", failure: true|false}. `failure` counts toward the
+  // consecutive-failure stop; a plain skip (e.g. unconfirmed after reload)
+  // doesn't.
+  async function advance(myRun, outcome) {
+    const batch = await ownedBatch(myRun);
+    if (!batch) return;
+    const contact = batch.contacts[batch.index];
+    batch.stats = batch.stats || { sent: 0, skipped: [] };
+    if (outcome.sent) {
+      batch.stats.sent++;
+      batch.consecutiveFailures = 0;
+    } else {
+      batch.stats.skipped.push({ name: contact.name, reason: outcome.skipped });
+      if (outcome.failure) batch.consecutiveFailures = (batch.consecutiveFailures || 0) + 1;
+    }
+    batch.inFlight = null;
+    batch.index++;
+    if ((batch.consecutiveFailures || 0) >= MAX_CONSECUTIVE_FAILURES) {
+      batch.running = false;
+      await saveBatch(batch);
+      activeRun = false;
+      showBadge(
+        `Stopped: ${MAX_CONSECUTIVE_FAILURES} contacts in a row failed - something's wrong (logged out? CRM page changed?). ` +
+          `Fix it, then click Start to continue from contact ${batch.index + 1} of ${batch.contacts.length}.${skippedList(batch.stats)}`,
+        "#a33"
+      );
+      return;
+    }
+    await saveBatch(batch);
+    const delayMs = outcome.sent && batch.autoSend ? Math.max(1, batch.delaySec || 5) * 1000 : 1500;
+    setTimeout(() => openAndFillContact(myRun), delayMs);
+  }
+
+  async function openAndFillContact(myRun) {
+    const batch = await ownedBatch(myRun);
+    if (!batch) return;
+    const index = batch.index;
     if (index >= batch.contacts.length) {
-      showBadge(`All ${batch.contacts.length} contact(s) done!`, "#2a7a2a");
-      awaitingSendFor = null;
-      await chrome.storage.local.remove("famfitBatch");
+      await finishRun(batch);
       return;
     }
     const contact = batch.contacts[index];
-    showBadge(`Finding ${contact.name}...`);
+    // Send was clicked for this contact but the page reloaded before it was
+    // confirmed - it may well have gone out, so never send it again.
+    if (batch.inFlight === index) {
+      await advance(myRun, { skipped: "send not confirmed before the page reloaded - check it in the CRM", failure: false });
+      return;
+    }
+    showBadge(`Finding ${contact.name} (${index + 1} of ${batch.contacts.length})...`);
 
-    // Remember the previous contact's modal pieces so the waits below only
-    // succeed once the CRM has swapped in NEW content for this contact -
-    // otherwise contact 2+ would instantly "find" contact 1's leftover form
-    // and fill the wrong person's message box.
-    const oldMessagesTab = document.querySelector('a[href="#messages"]');
-    const oldTextarea = getSmsTextarea();
+    // Mark whatever modal is already in the page as stale, so the waits
+    // below only succeed once the CRM has loaded FRESH content for this
+    // contact - otherwise the leftover form (a previous contact's, or this
+    // same contact's from an earlier attempt, even while hidden or briefly
+    // still showing) would be filled instead of the real one.
+    const STALE = "data-famfit-stale";
+    const oldTab = document.querySelector('a[href="#messages"]');
+    const oldBox = getSmsTextarea();
+    if (oldTab) oldTab.setAttribute(STALE, "1");
+    if (oldBox) oldBox.setAttribute(STALE, "1");
+    // Fresh = new nodes, or (if the CRM re-uses the same nodes) the form now
+    // names THIS contact and its box has been emptied.
+    const isFresh = (el) =>
+      !!el &&
+      (!el.hasAttribute(STALE) || (smsFormExplicitlyFor(contact) && !!getSmsTextarea() && getSmsTextarea().value === ""));
 
     if (!openContactModal(contact)) {
-      showBadge(
-        `Couldn't find "${contact.name}" on this page. Navigate to the page/filter that shows them, then reopen the popup and click Start again.`,
-        "#a33"
-      );
+      showBadge(`Couldn't find "${contact.name}" on this page - skipping.`, "#a33");
       awaitingSendFor = null;
+      await advance(myRun, { skipped: "not on this page (pasted contact)", failure: true });
       return;
     }
 
     try {
       await waitFor(() => {
         const t = document.querySelector('a[href="#messages"]');
-        return t && (t !== oldMessagesTab || smsFormExplicitlyFor(contact)) ? t : null;
+        return isFresh(t) ? t : null;
       }, 10000);
       document.querySelector('a[href="#messages"]').click();
       await waitFor(() => document.querySelector('a[href="#smss"]'), 4000);
       document.querySelector('a[href="#smss"]').click();
       await waitFor(() => {
         const t = getSmsTextarea();
-        return t && (t !== oldTextarea || smsFormExplicitlyFor(contact)) ? t : null;
+        return isFresh(t) && isVisible(t) ? t : null;
       }, 4000);
       if (!smsFormBelongsTo(contact)) throw new Error("wrong contact in modal");
     } catch (e) {
       if (myRun !== runId) return;
-      showBadge(`Couldn't open the message box for ${contact.name}. Skipping - check them manually.`, "#a33");
+      showBadge(`Couldn't open the message box for ${contact.name} - skipping.`, "#a33");
       awaitingSendFor = null;
-      const nextBatch = { ...batch, index: index + 1 };
-      await chrome.storage.local.set({ famfitBatch: nextBatch });
-      setTimeout(() => openAndFillContact(nextBatch, index + 1, myRun), 1500);
+      await advance(myRun, { skipped: "message box didn't open", failure: true });
       return;
     }
     if (myRun !== runId) return;
@@ -237,51 +345,152 @@
     textarea.scrollIntoView({ behavior: "smooth", block: "center" });
     textarea.focus();
 
-    awaitingSendFor = contact;
-    ensureSendObserver();
-    ensureSendShortcut();
+    // famfitRenderTemplate leaves {{field}} in place when the value is empty
+    // (e.g. no staff on the contact and no fallback picked) - never let that
+    // literal text go out unattended.
+    const unfilled = [...new Set(rendered.match(/\{\{\w+\}\}/g) || [])];
+    if (unfilled.length && batch.autoSend) {
+      await advance(myRun, { skipped: `message had blank ${unfilled.join(", ")}`, failure: true });
+      return;
+    }
 
-    if (batch.autoSend) {
+    awaitingSendFor = contact;
+    currentIndex = index;
+    ensureSendObserver();
+    ensureSendListeners();
+    watchForSend(contact, myRun, batch.autoSend && !unfilled.length);
+
+    if (unfilled.length) {
+      showBadge(
+        `${contact.name}: the message still has ${unfilled.join(", ")} - fill it in by hand before sending.`,
+        "#a33"
+      );
+    } else if (batch.autoSend) {
       showBadge(
         `Auto-sending to ${contact.name} (${index + 1} of ${batch.contacts.length}) - no manual review`,
         "#a33"
       );
+      setTimeout(async () => {
+        if (myRun !== runId || awaitingSendFor !== contact) return;
+        // Re-check ownership and position right before the irreversible
+        // click, and record the send as in flight first.
+        const b = await ownedBatch(myRun);
+        if (!b || b.index !== index || awaitingSendFor !== contact) return;
+        const sendBtn = getSendButton();
+        // Only ever click Send when the visible box holds exactly this
+        // contact's message; otherwise don't click - the confirm timeout
+        // below skips the contact.
+        const box = getSmsTextarea();
+        if (!sendBtn || !box || !isVisible(box) || box.value !== rendered || !smsFormBelongsTo(contact)) return;
+        b.inFlight = index;
+        await saveBatch(b);
+        if (myRun !== runId || awaitingSendFor !== contact) return;
+        sendBtn.click();
+      }, 400);
+      // If the CRM rejects the send, the box just stays open. Skip and keep
+      // going rather than stall; the skip is logged, and repeated failures
+      // stop the run. Never resend: the send may have gone out undetected.
       setTimeout(() => {
         if (myRun !== runId || awaitingSendFor !== contact) return;
-        const sendLink = document.getElementById("submit_sms_message");
-        if (sendLink) sendLink.click();
-      }, 400);
+        awaitingSendFor = null;
+        advance(myRun, { skipped: "send not confirmed within 20s - check it in the CRM", failure: true });
+      }, SEND_CONFIRM_TIMEOUT_MS);
     } else {
       showReadyBadge(contact, index + 1, batch.contacts.length);
     }
   }
 
+  function isVisible(el) {
+    return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+  }
+
+  // The SMS form's own Send button; falls back to a visible element with that
+  // id in case the button sits outside the form (ids are duplicated on this
+  // page, so never trust a bare getElementById).
+  function getSendButton() {
+    const smsForm = document.getElementById("new_sms_customer_message");
+    const scoped = smsForm && smsForm.querySelector('[id="submit_sms_message"]');
+    if (scoped) return scoped;
+    return Array.from(document.querySelectorAll('[id="submit_sms_message"]')).find(isVisible) || null;
+  }
+
+  // Set when Send is clicked (by mouse, Ctrl+Enter, or auto-send) for the
+  // contact currently awaiting a send. A send only counts as done after this.
+  let sendClicked = false;
+
+  // The CRM closes the message modal after a successful send. Once Send was
+  // clicked, the box disappearing = sent -> advance. If the box closes WITHOUT
+  // a Send click, the contact is left where it is so Start brings them back.
+  function watchForSend(contact, myRun, autoSend) {
+    sendClicked = false;
+    let done = false;
+    const stop = () => { done = true; obs.disconnect(); clearInterval(iv); };
+    const check = () => {
+      if (done) return;
+      if (myRun !== runId || awaitingSendFor !== contact) { stop(); return; }
+      if (isVisible(getSmsTextarea())) return;
+      stop();
+      if (sendClicked) {
+        handleSendDetected();
+      } else if (autoSend) {
+        awaitingSendFor = null;
+        advance(myRun, { skipped: "message box closed before sending", failure: true });
+      } else {
+        awaitingSendFor = null;
+        activeRun = false;
+        showBadge(`${contact.name}'s message box was closed without sending. Reopen the popup and click Start to bring them back up.`, "#b7791f");
+      }
+    };
+    // DOM changes (modal hiding) re-check immediately, even in a background
+    // tab; the interval is a fallback.
+    const obs = new MutationObserver(check);
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    const iv = setInterval(check, 500);
+  }
+
+  // Capture phase on window, so the CRM's own handlers on the message box
+  // can't swallow the keypress/click before we see it.
+  //
   // Ctrl+Enter while the message box is focused clicks the exact same real
   // Send button a mouse click would - this is a faster INPUT method for the
-  // same human decision, not a different decision. It only fires while the
-  // textarea for THIS specific message is actively focused, so it can't fire
-  // accidentally from elsewhere on the page or for a message not on screen.
-  let shortcutStarted = false;
-  function ensureSendShortcut() {
-    if (shortcutStarted) return;
-    shortcutStarted = true;
-    document.addEventListener("keydown", (e) => {
+  // same human decision, not a different decision. It only fires while focus
+  // is inside THIS contact's SMS form, so it can't fire accidentally from
+  // elsewhere on the page or for a message not on screen.
+  let listenersStarted = false;
+  function ensureSendListeners() {
+    if (listenersStarted) return;
+    listenersStarted = true;
+    window.addEventListener("click", (e) => {
       if (!awaitingSendFor) return;
-      const textarea = getSmsTextarea();
-      if (document.activeElement !== textarea) return;
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        const sendLink = document.getElementById("submit_sms_message");
-        if (sendLink) sendLink.click();
-      }
-    });
+      if (!(e.target.closest && e.target.closest('[id="submit_sms_message"]'))) return;
+      sendClicked = true;
+      // A human's click: mark it in flight too, so a reload right now can't
+      // bring this contact back up to be texted again.
+      const idx = currentIndex;
+      getBatch().then((b) => {
+        if (b && b.owner === INSTANCE && b.index === idx && b.inFlight !== idx) {
+          b.inFlight = idx;
+          saveBatch(b);
+        }
+      });
+    }, true);
+    window.addEventListener("keydown", (e) => {
+      if (!awaitingSendFor) return;
+      if (!(e.key === "Enter" && (e.ctrlKey || e.metaKey))) return;
+      const smsForm = document.getElementById("new_sms_customer_message");
+      if (!smsForm || !smsForm.contains(document.activeElement)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const sendBtn = getSendButton();
+      if (sendBtn) sendBtn.click();
+    }, true);
   }
 
   function ensureSendObserver() {
     if (observerStarted) return;
     observerStarted = true;
     const observer = new MutationObserver((mutations) => {
-      if (!awaitingSendFor) return;
+      if (!awaitingSendFor || !sendClicked) return;
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -300,16 +509,12 @@
   }
 
   async function handleSendDetected() {
+    if (!awaitingSendFor) return; // banner and modal-close can both fire for one send
     const sentContact = awaitingSendFor;
     const myRun = runId;
     awaitingSendFor = null;
     showBadge(`Sent to ${sentContact.name}. Moving to next...`, "#2a7a2a");
-    const data = await chrome.storage.local.get("famfitBatch");
-    if (!data.famfitBatch || myRun !== runId) return;
-    const nextIndex = data.famfitBatch.index + 1;
-    const nextBatch = { ...data.famfitBatch, index: nextIndex };
-    await chrome.storage.local.set({ famfitBatch: nextBatch });
-    setTimeout(() => openAndFillContact(nextBatch, nextIndex, myRun), 1200);
+    await advance(myRun, { sent: true });
   }
 
   // ---------- live CRM fetch: same JSON endpoint and filter logic as the
@@ -353,11 +558,121 @@
     return true;
   }
 
-  async function fetchCustomersPage(page) {
-    const params = new URLSearchParams({ take: 100, skip: (page - 1) * 100, page, pageSize: 100 });
+  // ---- CRM-side filtering. The grid endpoint accepts Kendo-style filters,
+  // checked against the live CRM:
+  //   works:   status (by numeric code, NOT name), priority (by name),
+  //            user_id, idle gte/lte, created_at gte (YYYY-MM-DD), all
+  //            ANDed together with one value per field
+  //   broken:  nested OR groups (a status OR-group plus any other filter
+  //            returns 0 rows), location / location_id (bogus totals),
+  //            user by name, "neq"
+  // So multiple picks in one box become one plain-AND query per value
+  // combination, merged; location and the Dead/bounced/unsubscribed
+  // exclusions stay client-side; and every row is re-checked with
+  // contactMatchesFilters - the server can only narrow the list, never add
+  // a wrong contact. ----
+  const MAPS_KEY = "famfitCrmMaps"; // {statusCodes: {name: code}, staffIds: {name: [ids]}}
+  const MAX_STATUS_CODE = 24;
+  const MAX_SERVER_QUERIES = 12;
+
+  // clauses: [[field, op, value], ...] - one value each, ANDed.
+  function filterParams(clauses) {
+    const out = [];
+    if (!clauses.length) return out;
+    out.push(["filter[logic]", "and"]);
+    clauses.forEach(([field, op, value], i) => {
+      const pre = `filter[filters][${i}]`;
+      out.push([`${pre}[field]`, field], [`${pre}[operator]`, op], [`${pre}[value]`, String(value)]);
+    });
+    return out;
+  }
+
+  // Multi-value clauses -> every single-value combination. If that would be
+  // more than MAX_SERVER_QUERIES queries, the widest fields are dropped from
+  // the server side (still enforced client-side) until it fits.
+  function expandClauses(clauses) {
+    const list = clauses.map((c) => c.slice());
+    const count = () => list.reduce((n, [, , vals]) => n * vals.length, 1);
+    const dropped = [];
+    while (count() > MAX_SERVER_QUERIES) {
+      let widest = 0;
+      list.forEach((c, i) => { if (c[2].length > list[widest][2].length) widest = i; });
+      dropped.push(list[widest][0]);
+      list.splice(widest, 1);
+    }
+    let combos = [[]];
+    for (const [field, op, vals] of list) {
+      combos = combos.flatMap((combo) => vals.map((v) => [...combo, [field, op, v]]));
+    }
+    return { combos, dropped };
+  }
+
+  function localDateString(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // Returns the server clauses plus which filters they cover. A filter whose
+  // values can't all be mapped (e.g. a staff name with no known id) is left
+  // off the server query entirely and handled client-side.
+  function buildServerClauses(f, maps) {
+    const clauses = [];
+    const used = [];
+    const statusCodes = (maps && maps.statusCodes) || {};
+    const staffIds = (maps && maps.staffIds) || {};
+    if (f.status && f.status.length) {
+      const codes = f.status.map((s) => statusCodes[s]);
+      if (codes.every((c) => c !== undefined)) { clauses.push(["status", "eq", codes]); used.push("status"); }
+    }
+    if (f.priority && f.priority.length) { clauses.push(["priority", "eq", f.priority]); used.push("priority"); }
+    if (f.staff && f.staff.length) {
+      const ids = f.staff.map((s) => staffIds[s]);
+      if (ids.every((x) => x && x.length)) { clauses.push(["user_id", "eq", [].concat(...ids)]); used.push("staff"); }
+    }
+    if (f.idleMin != null) { clauses.push(["idle", "gte", [f.idleMin]]); used.push("idle min"); }
+    if (f.idleMax != null) { clauses.push(["idle", "lte", [f.idleMax]]); used.push("idle max"); }
+    if (f.signedWithinDays != null) {
+      // One extra day of slack so timezone differences can only widen the
+      // server result; the exact cut is made client-side.
+      clauses.push(["created_at", "gte", [localDateString(new Date(Date.now() - (f.signedWithinDays + 1) * 86400000))]]);
+      used.push("signed within");
+    }
+    return { clauses, used };
+  }
+
+  async function fetchGrid(page, pageSize, extraParams) {
+    const params = new URLSearchParams({ take: pageSize, skip: (page - 1) * pageSize, page, pageSize });
+    for (const [k, v] of extraParams || []) params.append(k, v);
     const resp = await fetch(`/customers_grid.json?${params}`, { credentials: "include" });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const payload = await resp.json();
+    return resp.json();
+  }
+
+  // Status names -> numeric codes, by asking the CRM for 1 row per code.
+  // Also yields the complete status list with counts (the page scan only
+  // sees statuses present among the most recent customers).
+  async function probeStatusCodes() {
+    const statusCodes = {};
+    await Promise.all(
+      Array.from({ length: MAX_STATUS_CODE + 1 }, (_, code) =>
+        fetchGrid(1, 1, filterParams([["status", "eq", code]]))
+          .then((p) => {
+            const row = (p.data || [])[0];
+            if (p.total && row && row.status) statusCodes[row.status.trim()] = code;
+          })
+          .catch(() => {})
+      )
+    );
+    return statusCodes;
+  }
+
+  async function loadMaps() {
+    const data = await chrome.storage.local.get(MAPS_KEY);
+    return data[MAPS_KEY] || { statusCodes: {}, staffIds: {} };
+  }
+
+  async function fetchCustomersPage(page, extraParams) {
+    const payload = await fetchGrid(page, 100, extraParams);
     const contacts = (payload.data || [])
       .filter((r) => r.fullname)
       .map((r) => ({
@@ -365,6 +680,7 @@
         name: r.fullname,
         phone: r.phone || "",
         staff: r.user || "",
+        staff_id: r.user_id,
         location: r.location || "",
         status: r.status || "",
         priority: r.priority || "",
@@ -380,8 +696,10 @@
     const priorities = new Set();
     const locations = new Set();
     const staff = new Set();
+    const staffIds = {};
     let total = 0;
     let page = 1;
+    const statusProbe = probeStatusCodes();
     for (; page <= maxPages; page++) {
       const { contacts, total: t } = await fetchCustomersPage(page);
       total = t;
@@ -390,10 +708,20 @@
         if (c.status) statuses.add(c.status.trim());
         if (c.priority) priorities.add(c.priority.trim());
         if (c.location) locations.add(c.location.trim());
-        if (c.staff) staff.add(c.staff.trim());
+        if (c.staff) {
+          const name = c.staff.trim();
+          staff.add(name);
+          if (c.staff_id != null) {
+            staffIds[name] = staffIds[name] || [];
+            if (!staffIds[name].includes(c.staff_id)) staffIds[name].push(c.staff_id);
+          }
+        }
       }
       if (progressCb) progressCb(page, total);
     }
+    const statusCodes = await statusProbe;
+    Object.keys(statusCodes).forEach((s) => statuses.add(s));
+    await chrome.storage.local.set({ [MAPS_KEY]: { statusCodes, staffIds } });
     const sortFn = (a, b) => a.localeCompare(b);
     return {
       statuses: Array.from(statuses).sort(sortFn),
@@ -406,50 +734,82 @@
   }
 
   async function searchFilteredContacts(filters, maxPages, progressCb) {
-    const matches = [];
-    let total = 0;
-    let page = 1;
-    let excluded = 0;
-    for (; page <= maxPages; page++) {
-      const { contacts, total: t } = await fetchCustomersPage(page);
-      total = t;
-      if (!contacts.length) break;
-      for (const c of contacts) {
-        if (contactIsAutoExcluded(c)) {
-          excluded++;
-          continue;
-        }
-        if (contactMatchesFilters(c, filters)) matches.push(c);
-      }
-      if (progressCb) progressCb(page, matches.length, total);
+    const maps = await loadMaps();
+    // Selected statuses with no known code (maps from an older scan) -> re-probe once.
+    if ((filters.status || []).some((s) => maps.statusCodes[s] === undefined)) {
+      maps.statusCodes = { ...maps.statusCodes, ...(await probeStatusCodes()) };
+      await chrome.storage.local.set({ [MAPS_KEY]: maps });
     }
-    return { matches, pagesSearched: page - 1, total, excluded };
+    const { clauses, used } = buildServerClauses(filters, maps);
+    const { combos, dropped } = expandClauses(clauses);
+    const fieldLabel = { status: "status", priority: "priority", user_id: "staff" };
+    const serverFiltered = used.filter((u) => !dropped.some((d) => fieldLabel[d] === u));
+
+    // maxPages is a budget across all combination queries together.
+    const matches = [];
+    const seen = new Set();
+    const seenPhones = new Set();
+    let duplicates = 0;
+    let total = 0;
+    let pagesSearched = 0;
+    let excluded = 0;
+    let complete = true;
+    for (const combo of combos) {
+      const extra = filterParams(combo);
+      let comboTotal = 0;
+      let page = 1;
+      for (; ; page++) {
+        if (pagesSearched >= maxPages) { complete = false; break; }
+        const { contacts, total: t } = await fetchCustomersPage(page, extra);
+        pagesSearched++;
+        if (page === 1) { comboTotal = t; total += t; }
+        for (const c of contacts) {
+          if (seen.has(c.id)) continue;
+          seen.add(c.id);
+          // No phone = can't be texted; under auto-send the CRM would reject
+          // the send and stall the batch.
+          if (contactIsAutoExcluded(c) || !c.phone.trim()) {
+            excluded++;
+            continue;
+          }
+          if (!contactMatchesFilters(c, filters)) continue;
+          // Several customer records can share one phone - text it once.
+          const phoneKey = normalizePhone(c.phone);
+          if (seenPhones.has(phoneKey)) {
+            duplicates++;
+            continue;
+          }
+          seenPhones.add(phoneKey);
+          matches.push(c);
+        }
+        if (progressCb) progressCb(pagesSearched, matches.length, total);
+        if (!contacts.length || page * 100 >= comboTotal) break;
+      }
+    }
+    return { matches, pagesSearched, total, excluded, duplicates, serverFiltered, complete };
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "FAMFIT_START") {
-      const myRun = ++runId;
-      awaitingSendFor = null;
-      chrome.storage.local.get("famfitBatch", (data) => {
-        if (data.famfitBatch) {
-          openAndFillContact(data.famfitBatch, data.famfitBatch.index, myRun);
-        }
-      });
-      sendResponse({ ok: true });
+      startRun().then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: e.message }));
+      return true; // async response
     } else if (message.type === "FAMFIT_STOP") {
       runId++;
+      activeRun = false;
       awaitingSendFor = null;
       hideBadge();
       sendResponse({ ok: true });
     } else if (message.type === "FAMFIT_LOAD_FILTERED") {
       showBadge("Searching CRM...");
       searchFilteredContacts(message.filters, message.maxPages || 5, (page, found, total) => {
-        showBadge(`Searching... page ${page}, ${found} match(es) so far (of ${total} total).`);
+        showBadge(`Searching... ${page} page(s) read, ${found} match(es) so far.`);
       })
         .then((result) => {
           showBadge(
-            `Loaded ${result.matches.length} matching contact(s) (searched ${result.pagesSearched} page(s) of ${result.total} total, ${result.excluded} auto-excluded).`,
-            "#2a7a2a"
+            result.complete
+              ? `Loaded ${result.matches.length} matching contact(s) - searched all ${result.total} CRM match(es), ${result.excluded} auto-excluded.`
+              : `Loaded ${result.matches.length} contact(s) from the first ${result.pagesSearched} page(s) of ${result.total} CRM match(es) - raise "Search up to N pages" to get the rest.`,
+            result.complete ? "#2a7a2a" : "#b7791f"
           );
           sendResponse({ ok: true, ...result });
         })
@@ -459,20 +819,23 @@
         });
       return true; // async response
     } else if (message.type === "FAMFIT_GET_FILTER_OPTIONS") {
+      // Runs every time the popup opens - keep it from overwriting the badge
+      // of a batch this tab is running.
+      const scanBadge = (text, color) => { if (!activeRun) showBadge(text, color); };
       const scanPages = message.maxPages || 10;
-      showBadge(`Scanning filter options... page 1 of ${scanPages}`);
+      scanBadge(`Scanning filter options... page 1 of ${scanPages}`);
       fetchFilterOptions(scanPages, (page, total) => {
-        showBadge(`Scanning filter options... page ${page} of ${scanPages} (${total} customers total)`);
+        scanBadge(`Scanning filter options... page ${page} of ${scanPages} (${total} customers total)`);
       })
         .then((result) => {
-          showBadge(
+          scanBadge(
             `Loaded filter options (scanned ${result.pagesSearched} page(s) of ${result.total} total).`,
             "#2a7a2a"
           );
           sendResponse({ ok: true, ...result });
         })
         .catch((e) => {
-          showBadge(`Couldn't load filter options: ${e.message}`, "#a33");
+          scanBadge(`Couldn't load filter options: ${e.message}`, "#a33");
           sendResponse({ ok: false, error: e.message });
         });
       return true; // async response
@@ -480,10 +843,44 @@
     return true;
   });
 
-  // Resume a batch already in progress if the page reloads mid-run.
-  chrome.storage.local.get("famfitBatch", (data) => {
-    if (data.famfitBatch) {
-      showBadge(`Batch in progress (${data.famfitBatch.index + 1}/${data.famfitBatch.contacts.length}). Reopen the popup and click Start to resume.`);
+  // Claim the stored batch for this tab and drive it.
+  async function startRun() {
+    const myRun = ++runId;
+    awaitingSendFor = null;
+    const batch = await getBatch();
+    if (!batch) return;
+    batch.owner = INSTANCE;
+    batch.running = true;
+    batch.consecutiveFailures = 0;
+    await saveBatch(batch);
+    activeRun = true;
+    openAndFillContact(myRun);
+  }
+
+  // Keep lastActivity fresh while this tab drives a run, so another tab
+  // loading the CRM can tell the run is alive and not take it over.
+  setInterval(() => {
+    if (!activeRun) return;
+    getBatch().then((b) => { if (b && b.owner === INSTANCE && activeRun) saveBatch(b); });
+  }, 5000);
+
+  // Page (re)loaded with a batch stored: an auto-send run that was active
+  // recently resumes by itself; anything else waits for Start.
+  getBatch().then((b) => {
+    if (!b) return;
+    const idle = Date.now() - (b.lastActivity || 0);
+    if (b.autoSend && b.running && idle < AUTO_RESUME_WINDOW_MS) {
+      const wait = Math.max(3000, RESUME_STALE_MS - idle);
+      showBadge(`Page reloaded - resuming auto-send at contact ${b.index + 1} of ${b.contacts.length} in ${Math.round(wait / 1000)}s (Stop in the popup to cancel)...`, "#b7791f");
+      setTimeout(async () => {
+        const now = await getBatch();
+        // Stopped meanwhile, or another tab is actively running it.
+        if (!now || !now.running) { hideBadge(); return; }
+        if (now.lastActivity !== b.lastActivity && Date.now() - now.lastActivity < RESUME_STALE_MS) { hideBadge(); return; }
+        startRun();
+      }, wait);
+    } else {
+      showBadge(`Batch in progress (${b.index + 1}/${b.contacts.length}). Reopen the popup and click Start to resume.`);
     }
   });
 })();

@@ -34,6 +34,16 @@ Click **Stop** anytime to halt auto-advancing.
 - **The send-detection logic was built by reverse-engineering the CRM's own JavaScript, not by testing an actual send.** "Did this message actually get sent" has not been verified end-to-end against a live send. **Test it carefully on one low-stakes contact first** before trusting it for a real batch.
 - **Auto-send mode removes the one human-in-the-loop check this tool was originally built around.** If the success-banner detection ever misfires (page layout change, slow network, etc.) it could skip a contact, double-fire a click, or advance before a send actually completed. Keep it off for any batch aimed at real customer phones; it exists for testing against a non-production destination.
 - Contacts loaded from the CRM (Load matching contacts) are opened by their customer id, so they don't need to be on the page you're looking at. Contacts from a **pasted list** have no id and can only be found if they're visible on the *current* customer list page/filter - otherwise it'll tell you and stop; navigate to find them and resume manually. Contacts loaded before v1.1.0 have no id either - click Load again to refresh them.
+- **Load searches the whole CRM**: Status, Priority, Staff, Idle and Signed-up-within are sent to the CRM as filters, so Load covers all customers, not just the most recent. Location and the Dead/bounced/unsubscribed exclusions are applied by the extension. "Search up to N pages" caps how many pages of *matches* (100 each) are pulled; the summary says if it stopped early.
+- **Long auto-send runs**: built to run unattended through the whole list.
+  - A contact that can't be opened, has a blank `{{field}}`, or whose send isn't confirmed within 20s is **skipped and logged**, and the run carries on. It is never re-sent.
+  - **3 failures in a row stop the run** (usually an expired login or a CRM change) instead of skipping everyone. Fix it, then click Start to continue from where it stopped.
+  - If the CRM page reloads mid-run, auto-send **resumes by itself** within ~15s. A contact whose Send was already clicked when the page reloaded is skipped, never texted twice.
+  - Only one CRM tab ever drives a run. Duplicate phone numbers in a Load are texted once.
+  - "Seconds between auto-sends" (default 5) paces the run. Keep the CRM tab visible (its own window is fine) - Chrome slows down hidden tabs.
+  - Auto-send only clicks Send when the visible box holds exactly that contact's message.
+  - **Start resumes** a stored batch where it left off; click **Stop** first to start a new one. The popup shows progress, and after a run, who was skipped and why.
+- **Send detection**: after you click Send (or Ctrl+Enter), the extension advances when the CRM closes the message box or shows its green banner. Closing the box *without* clicking Send leaves that contact in place - click Start to bring them back.
 - Before filling each message it waits for that contact's own message box to load, and skips the contact (with a red badge) rather than risk filling the previous person's box.
 - If the CRM's page layout, tab structure, or success-banner markup ever changes, this will likely need updating.
 - It only substitutes `{{first_name}}`, `{{last_name}}`, `{{staff}}`, `{{location}}` - not appointment dates.
