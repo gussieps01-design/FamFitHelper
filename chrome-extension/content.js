@@ -412,16 +412,36 @@
       );
       setTimeout(async () => {
         if (myRun !== runId || awaitingSendFor !== contact) return;
-        // Re-check ownership and position right before the irreversible
-        // click, and record the send as in flight first.
+        // Right before the irreversible click: only click when the visible
+        // box for THIS contact holds this message. The CRM gets a few
+        // seconds to settle, and may reformat the text a little (spacing,
+        // line endings, something appended) - the message just has to be in
+        // there. If a check still fails, skip with the exact reason.
+        let why = "";
+        const ready = () => {
+          const box = getSmsTextarea();
+          const btn = getSendButton();
+          if (!btn) { why = "the CRM's Send button wasn't found"; return null; }
+          if (!box || !isVisible(box)) { why = "the message box wasn't visible"; return null; }
+          if (!smsFormBelongsTo(contact)) { why = "the message box was for a different customer"; return null; }
+          if (!normText(rendered)) { why = "the message is empty"; return null; }
+          if (!normText(box.value).includes(normText(rendered))) {
+            why = `the message box text didn't match what was typed (box has ${box.value.length} characters, message has ${rendered.length})`;
+            return null;
+          }
+          return btn;
+        };
+        let sendBtn = null;
+        try { sendBtn = await waitFor(ready, 5000); } catch (e) { /* why says which check failed */ }
+        if (myRun !== runId || awaitingSendFor !== contact) return;
+        if (!sendBtn) {
+          awaitingSendFor = null;
+          advance(myRun, { skipped: `auto-send didn't click Send - ${why}`, failure: true });
+          return;
+        }
+        // Record the send as in flight first, so a reload can't resend it.
         const b = await ownedBatch(myRun);
         if (!b || b.index !== index || awaitingSendFor !== contact) return;
-        const sendBtn = getSendButton();
-        // Only ever click Send when the visible box holds exactly this
-        // contact's message; otherwise don't click - the confirm timeout
-        // below skips the contact.
-        const box = getSmsTextarea();
-        if (!sendBtn || !box || !isVisible(box) || box.value !== rendered || !smsFormBelongsTo(contact)) return;
         b.inFlight = index;
         await saveBatch(b);
         if (myRun !== runId || awaitingSendFor !== contact) return;
@@ -438,6 +458,12 @@
     } else {
       showReadyBadge(contact, index + 1, batch.contacts.length);
     }
+  }
+
+  // Whitespace/line-ending-insensitive form of a message, for comparing what
+  // was typed with what the CRM's box ends up holding.
+  function normText(s) {
+    return (s || "").normalize("NFC").replace(/\s+/g, " ").trim();
   }
 
   function isVisible(el) {
@@ -903,18 +929,26 @@
     openAndFillContact(myRun);
   }
 
-  // Keep lastActivity fresh while this tab drives a run, so another tab
-  // loading the CRM can tell the run is alive and not take it over.
+  // While this tab drives a run, keep a heartbeat fresh so another tab
+  // loading the CRM can tell the run is alive and not take it over. It has
+  // its own key: re-saving the whole batch here could overwrite a newer
+  // batch (e.g. just-advanced index) with a stale copy.
+  const HEARTBEAT_KEY = "famfitHeartbeat";
   setInterval(() => {
-    if (!activeRun) return;
-    getBatch().then((b) => { if (b && b.owner === INSTANCE && activeRun) saveBatch(b); });
+    if (activeRun) chrome.storage.local.set({ [HEARTBEAT_KEY]: Date.now() });
   }, 5000);
+
+  async function lastRunActivity(batch) {
+    const hb = (await chrome.storage.local.get(HEARTBEAT_KEY))[HEARTBEAT_KEY] || 0;
+    return Math.max(batch.lastActivity || 0, hb);
+  }
 
   // Page (re)loaded with a batch stored: an auto-send run that was active
   // recently resumes by itself; anything else waits for Start.
-  getBatch().then((b) => {
+  getBatch().then(async (b) => {
     if (!b) return;
-    const idle = Date.now() - (b.lastActivity || 0);
+    const seen = await lastRunActivity(b);
+    const idle = Date.now() - seen;
     if (b.autoSend && b.running && idle < AUTO_RESUME_WINDOW_MS) {
       const wait = Math.max(3000, RESUME_STALE_MS - idle);
       showBadge(`Page reloaded - resuming auto-send at contact ${b.index + 1} of ${b.contacts.length} in ${Math.round(wait / 1000)}s (Stop in the popup to cancel)...`, "#b7791f");
@@ -922,7 +956,8 @@
         const now = await getBatch();
         // Stopped meanwhile, or another tab is actively running it.
         if (!now || !now.running) { hideBadge(); return; }
-        if (now.lastActivity !== b.lastActivity && Date.now() - now.lastActivity < RESUME_STALE_MS) { hideBadge(); return; }
+        const nowSeen = await lastRunActivity(now);
+        if (nowSeen !== seen && Date.now() - nowSeen < RESUME_STALE_MS) { hideBadge(); return; }
         startRun();
       }, wait);
     } else {
