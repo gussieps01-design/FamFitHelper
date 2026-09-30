@@ -62,6 +62,13 @@ PART 2 - SEND A BATCH OF TEXTS
    might have no staff or location, pick a fallback in the two boxes
    below the template.
 
+   Each template has several VERSIONS of the same pitch, separated by
+   a line with just --- on it. With "Rotate between versions" checked
+   (the default), each person gets the next version, so people don't
+   all get the exact same wording. You can edit them, add more (put
+   --- on its own line between them) or delete some. Uncheck "Rotate"
+   to send everyone the first version.
+
 6. Choose how to send:
 
    A) YOU CLICK SEND (safest - leave "Auto-send" unchecked)
@@ -107,6 +114,10 @@ PART 3 - GOOD TO KNOW
 ---------------------------------------------
 UPDATING TO A NEWER VERSION
 ---------------------------------------------
+
+The extension can't install updates by itself, but it checks for them:
+when a newer version is out, the popup shows an orange "Update
+available" box with a download link. Then:
 
 1. Download the newest ZIP from the releases page (same link as above).
 2. Go to chrome://extensions. On FamFitHelper CRM Assist, click

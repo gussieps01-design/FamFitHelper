@@ -6,9 +6,58 @@ const statusEl = document.getElementById("status");
 const runStatusEl = document.getElementById("runStatus");
 
 // Show the loaded version in the popup title, so an old copy is easy to spot.
+let EXT_VERSION = "";
 try {
-  document.querySelector("h3").textContent += ` v${chrome.runtime.getManifest().version}`;
+  EXT_VERSION = chrome.runtime.getManifest().version;
+  document.querySelector("h3").textContent += ` v${EXT_VERSION}`;
 } catch (e) { /* not running as an extension */ }
+
+// Update notice. Unpacked extensions can't update themselves, so check the
+// GitHub releases (at most every 6 hours, cached) and show a download link
+// when a newer extension release exists.
+const RELEASES_API = "https://api.github.com/repos/gussieps01-design/FamFitHelper/releases?per_page=20";
+const UPDATE_CACHE_KEY = "famfitUpdateCheck";
+
+function newerVersion(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+async function checkForUpdate() {
+  if (!EXT_VERSION) return;
+  let latest;
+  try {
+    const cached = (await chrome.storage.local.get(UPDATE_CACHE_KEY))[UPDATE_CACHE_KEY];
+    if (cached && Date.now() - cached.at < 6 * 3600 * 1000) {
+      latest = cached.latest;
+    } else {
+      const resp = await fetch(RELEASES_API, { headers: { Accept: "application/vnd.github+json" } });
+      if (!resp.ok) return;
+      const releases = await resp.json();
+      const ext = releases.find((r) => !r.draft && !r.prerelease && /^extension-v\d+(\.\d+)*$/.test(r.tag_name));
+      latest = ext ? { version: ext.tag_name.replace("extension-v", ""), url: ext.html_url } : null;
+      await chrome.storage.local.set({ [UPDATE_CACHE_KEY]: { at: Date.now(), latest } });
+    }
+  } catch (e) {
+    return; // offline or GitHub unreachable - just skip the check
+  }
+  if (!latest || !newerVersion(latest.version, EXT_VERSION)) return;
+  const el = document.getElementById("updateNotice");
+  el.textContent = `Update available: v${latest.version} (you have v${EXT_VERSION}). `;
+  const link = document.createElement("a");
+  link.href = latest.url;
+  link.target = "_blank";
+  link.textContent = "Download it here";
+  link.style.color = "#fff";
+  el.appendChild(link);
+  el.appendChild(document.createTextNode(" - then follow the Updating steps in HOW-TO-USE.txt."));
+  el.style.display = "block";
+}
+checkForUpdate();
 const loadedSummaryEl = document.getElementById("loadedSummary");
 const textCountOfEl = document.getElementById("textCountOf");
 
@@ -24,11 +73,28 @@ FAMFIT_TEMPLATES.forEach((t, i) => {
   opt.textContent = t.name;
   templateSelect.appendChild(opt);
 });
-templateSelect.addEventListener("change", () => {
-  templateText.value = FAMFIT_TEMPLATES[templateSelect.value].text;
+const variantCountEl = document.getElementById("variantCount");
+function updateVariantCount() {
+  const n = famfitSplitVariants(templateText.value).length;
+  const rotate = document.getElementById("rotateVariants").checked;
+  variantCountEl.textContent = n <= 1
+    ? "1 version. To rotate wording, add more versions with --- on its own line between them."
+    : rotate
+      ? `${n} versions - rotating: each contact gets the next one. (--- on its own line separates versions.)`
+      : `${n} versions - rotation is OFF, everyone gets the first version.`;
+}
+document.getElementById("rotateVariants").addEventListener("change", () => {
+  updateVariantCount();
   saveFormState();
 });
-templateText.value = FAMFIT_TEMPLATES[0].text;
+templateSelect.addEventListener("change", () => {
+  templateText.value = famfitTemplateText(FAMFIT_TEMPLATES[templateSelect.value]);
+  updateVariantCount();
+  saveFormState();
+});
+templateText.value = famfitTemplateText(FAMFIT_TEMPLATES[0]);
+templateText.addEventListener("input", updateVariantCount);
+updateVariantCount();
 
 function parseContacts(raw) {
   return raw
@@ -114,6 +180,8 @@ function collectFormState() {
     fMaxPages: document.getElementById("fMaxPages").value,
     templateIndex: templateSelect.value,
     templateText: templateText.value,
+    templatesVersion: 2, // templates with multiple rotating versions
+    rotateVariants: document.getElementById("rotateVariants").checked,
     staff: document.getElementById("staff").value,
     location: document.getElementById("location").value,
     autoSend: document.getElementById("autoSend").checked,
@@ -145,7 +213,13 @@ async function restoreFormState() {
   if (state.templateIndex !== undefined && FAMFIT_TEMPLATES[state.templateIndex]) {
     templateSelect.value = state.templateIndex;
   }
-  templateText.value = state.templateText || FAMFIT_TEMPLATES[0].text;
+  // Saved before templates had multiple versions: show the new rotating
+  // versions of the chosen template instead of the old single message.
+  templateText.value = state.templatesVersion === 2 && state.templateText
+    ? state.templateText
+    : famfitTemplateText(FAMFIT_TEMPLATES[templateSelect.value] || FAMFIT_TEMPLATES[0]);
+  document.getElementById("rotateVariants").checked = state.rotateVariants !== false;
+  updateVariantCount();
   document.getElementById("autoSend").checked = !!state.autoSend;
   document.getElementById("delaySec").value = state.delaySec || "5";
   document.getElementById("cooldownDays").value = state.cooldownDays != null && state.cooldownDays !== "" ? state.cooldownDays : "7";
@@ -304,6 +378,10 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     autoSend,
     delaySec: Math.max(1, numOrNull("delaySec") || 5),
     cooldownDays: cooldownDaysValue(),
+    // Rotate: each batch starts at a random version, then takes the next
+    // one per contact. Off: everyone gets the first version.
+    rotate: document.getElementById("rotateVariants").checked,
+    variantOffset: Math.floor(Math.random() * Math.max(1, famfitSplitVariants(templateText.value).length)),
     index: 0,
   };
   await chrome.storage.local.set({ famfitBatch: batch });

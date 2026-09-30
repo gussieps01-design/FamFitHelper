@@ -24,6 +24,7 @@
 </head>
 <body>
   <h3>FamFitHelper CRM Assist</h3>
+  <div id="updateNotice" style="display:none;background:#C6552B;color:#fff;padding:8px;border-radius:4px;font-size:12px;margin-bottom:8px;"></div>
   <div class="muted">By default, never clicks Send - you click Send (or Ctrl+Enter) yourself, then it advances automatically. The "Auto-send" checkbox below turns that off and sends unattended instead.</div>
 
   <fieldset>
@@ -99,7 +100,12 @@
 
   <label>Template</label>
   <select id="templateSelect"></select>
-  <textarea id="templateText"></textarea>
+  <textarea id="templateText" style="height:140px;"></textarea>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+    <input type="checkbox" id="rotateVariants" style="width:auto;" checked>
+    <span>Rotate between versions (so people don't all get the same wording)</span>
+  </label>
+  <div id="variantCount" class="muted" style="margin-bottom:0;"></div>
 
   <div class="row">
     <div>

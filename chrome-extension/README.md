@@ -1,4 +1,4 @@
-# FamFitHelper CRM Assist (Chrome extension, v1.3)
+# FamFitHelper CRM Assist (Chrome extension, v1.4)
 
 Texts a filtered list of CRM customers one at a time from a message template. By default you click Send for each person and it moves on to the next. The opt-in **Auto-send** mode sends through the whole list by itself.
 
@@ -11,7 +11,11 @@ Simple step-by-step instructions: [../HOW-TO-USE.txt](../HOW-TO-USE.txt).
 3. Click **Load unpacked** and select this `chrome-extension` folder.
 4. Pin the extension so it's easy to reach.
 
-After updating the files, click the reload arrow on the extension in `chrome://extensions`, then **refresh the CRM tab**. An already-open tab keeps the old version, and the popup will tell you to refresh.
+**Updates:** unpacked extensions can't update themselves. The popup checks GitHub releases (at most every 6 hours) and shows an **Update available** notice with a download link when a newer extension release exists. The version in use is shown in the popup title and on the CRM-page status box. To update:
+- Remove the extension and **Load unpacked** the new folder, or copy the new files over the folder Chrome already uses and click the reload arrow.
+- Then **refresh the CRM tab**. An already-open tab keeps the old version.
+
+For true automatic updates, the extension would need to be published (e.g. unlisted) on the Chrome Web Store.
 
 ## Use
 
@@ -24,6 +28,8 @@ After updating the files, click the reload arrow on the extension in `chrome://e
    - Or paste `Name<TAB>Phone` lines under "Or paste a list manually instead".
 4. **Text how many**: leave it blank for everyone loaded, or type a number to text only the first N.
 5. Pick a template. The optional Staff/Location fallbacks are used when a contact has none in the CRM.
+   - Each template holds several **versions** of the same pitch, separated by a line with just `---`. With **Rotate between versions** on (the default), each batch starts at a random version and each contact gets the next one. Turn it off to send everyone the first version.
+   - All 20 starter templates come with 3 versions each. Edit, add or remove versions right in the box.
 6. **Start batch**:
    - **Manual** (Auto-send off): each person's SMS box opens pre-filled, with their name and phone shown large in the corner. Review it, then click Send or press **Ctrl+Enter**. It moves on when the CRM confirms the send.
    - **Auto-send**: set "seconds between auto-sends" (default 5), start, and confirm. Keep the CRM tab visible, in its own window if you like, because Chrome slows down hidden tabs.

@@ -382,7 +382,12 @@
     if (myRun !== runId) return;
 
     const [firstName, ...rest] = (contact.name || "").split(" ");
-    const rendered = famfitRenderTemplate(batch.templateText, {
+    // Rotate through the template's versions: each contact gets the next
+    // one, starting from a random version per batch.
+    const variants = famfitSplitVariants(batch.templateText);
+    const pick = batch.rotate === false ? 0 : ((batch.variantOffset || 0) + index) % Math.max(1, variants.length);
+    const variant = variants.length ? variants[pick] : "";
+    const rendered = famfitRenderTemplate(variant, {
       first_name: firstName || "",
       last_name: rest.join(" "),
       staff: contact.staff || batch.staff || "",
