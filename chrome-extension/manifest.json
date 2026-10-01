@@ -1,17 +1,40 @@
 {
   "manifest_version": 3,
   "name": "FamFitHelper CRM Assist",
-  "version": "1.4.2",
-  "description": "Pre-fills text messages for a batch of CRM contacts and auto-advances after each send. You click Send yourself unless you opt in to Auto-send.",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": ["https://crm.healthyimagefitness.com/*"],
+  "version": "1.6.0",
+  "description": "Texts a filtered list of Healthy Image Fitness CRM customers from message templates - click Send yourself, or opt in to Auto-send.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://crm.healthyimagefitness.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["https://crm.healthyimagefitness.com/*"],
-      "js": ["templates.js", "content.js"],
+      "matches": [
+        "https://crm.healthyimagefitness.com/*"
+      ],
+      "js": [
+        "templates.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

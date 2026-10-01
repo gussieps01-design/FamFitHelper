@@ -72,15 +72,98 @@
     if (el) el.remove();
   }
 
+  // ---------- timers that keep their pace in a background tab ----------
+  // Chrome slows timers in hidden tabs (down to about once a minute after a
+  // few minutes), which stalled long auto-send runs whenever the CRM tab
+  // wasn't in front. The extension's service worker (background.js) isn't
+  // slowed, so wake-ups are requested from it over a port. The page's own
+  // setTimeout races it as a fallback - whichever fires first wins - so this
+  // is never slower than a plain setTimeout, even without the worker.
+  const TIMER_CHUNK_MS = 20000; // a request at least this often keeps the worker awake
+  let timerPort = null;
+  let timerPortOff = false;
+  let timerSeq = 0;
+  const pendingTimers = new Map(); // id -> arm()
+  const timerDisconnects = [];
+
+  function timerPortOrNull() {
+    if (timerPort || timerPortOff) return timerPort;
+    try {
+      const port = chrome.runtime.connect({ name: "famfit-timer" });
+      port.onMessage.addListener((m) => {
+        const arm = m && m.type === "fired" && pendingTimers.get(m.id);
+        if (arm) arm();
+      });
+      port.onDisconnect.addListener(() => {
+        timerPort = null;
+        // Worker restarted or extension reloaded: re-request pending
+        // wake-ups on a new connection - unless it keeps failing, then just
+        // rely on the page's own timers.
+        const now = Date.now();
+        timerDisconnects.push(now);
+        while (timerDisconnects.length && now - timerDisconnects[0] > 10000) timerDisconnects.shift();
+        if (timerDisconnects.length > 5) { timerPortOff = true; return; }
+        for (const arm of Array.from(pendingTimers.values())) arm();
+      });
+      timerPort = port;
+    } catch (e) {
+      timerPort = null; // not running as an extension (tests) or context gone
+    }
+    return timerPort;
+  }
+
+  // setTimeout that isn't slowed in a background tab. Returns a cancel function.
+  function later(fn, ms) {
+    const id = ++timerSeq;
+    const due = Date.now() + Math.max(0, ms);
+    let done = false;
+    const fire = () => {
+      if (done) return;
+      done = true;
+      pendingTimers.delete(id);
+      clearTimeout(fallback);
+      fn();
+    };
+    const arm = () => {
+      if (done) return;
+      const left = due - Date.now();
+      if (left <= 0) { fire(); return; }
+      const port = timerPortOrNull();
+      if (!port) return;
+      try {
+        port.postMessage({ type: "after", id, ms: Math.min(left, TIMER_CHUNK_MS) });
+      } catch (e) {
+        timerPort = null;
+      }
+    };
+    pendingTimers.set(id, arm);
+    const fallback = setTimeout(fire, Math.max(0, ms));
+    arm();
+    return () => { done = true; pendingTimers.delete(id); clearTimeout(fallback); };
+  }
+
+  // setInterval counterpart of later(). Returns a stop function.
+  function every(fn, ms) {
+    let stopped = false;
+    let cancel = null;
+    const tick = () => {
+      if (stopped) return;
+      fn();
+      if (!stopped) cancel = later(tick, ms);
+    };
+    cancel = later(tick, ms);
+    return () => { stopped = true; if (cancel) cancel(); };
+  }
+
+  const sleep = (ms) => new Promise((r) => later(r, ms));
+
   // Re-checks on every DOM change (MutationObserver callbacks aren't slowed
-  // when the tab is in the background, unlike timers), with a slow interval
-  // as a fallback. The deadline is only enforced on the fallback tick, so a
-  // throttled background tab fails late rather than falsely.
+  // in a background tab either), with a steady tick as a fallback.
   function waitFor(checkFn, timeoutMs) {
     return new Promise((resolve, reject) => {
       const start = Date.now();
       let done = false;
-      const finish = (fn, v) => { done = true; obs.disconnect(); clearInterval(iv); fn(v); };
+      const finish = (fn, v) => { done = true; obs.disconnect(); stopTick(); fn(v); };
       const check = () => {
         if (done) return;
         const result = checkFn();
@@ -88,7 +171,7 @@
       };
       const obs = new MutationObserver(check);
       obs.observe(document.body, { childList: true, subtree: true, attributes: true });
-      const iv = setInterval(() => {
+      const stopTick = every(() => {
         check();
         if (!done && Date.now() - start > timeoutMs) finish(reject, new Error("timeout"));
       }, 250);
@@ -124,7 +207,11 @@
   // open modal covers the page; a closed one is display:none (an empty
   // element with no height doesn't count).
   function isWindowShown(el) {
-    return !!el && el.offsetHeight > 0 && el.getClientRects().length > 0;
+    if (!el || getComputedStyle(el).display === "none") return false;
+    // Bootstrap marks a shown window with "in"; otherwise it must take up
+    // space (an empty, zero-height element doesn't count). Not relying on
+    // size alone keeps this right even when the page has no size at all.
+    return el.classList.contains("in") || el.offsetHeight > 0;
   }
 
   function openMessageWindows() {
@@ -135,24 +222,41 @@
     return openMessageWindows().length > 0;
   }
 
-  // Close any open message window (click its X; Escape as a fallback) and
-  // wait until it's gone. True when no message window is showing.
+  // A message window is open OR still animating open/closed. Bootstrap adds
+  // its dark backdrop as soon as a window starts opening and removes it only
+  // after the window has finished closing. This matters in a background
+  // tab: Chrome slows the CRM's own animation timers there, so a window can
+  // be "opening" for a while without being on screen yet - and clicking the
+  // open link then (it's a toggle) would close it again.
+  function messageWindowBusy() {
+    return messageWindowOpen() || !!document.querySelector(".modal-backdrop");
+  }
+
+  // Close any message window and wait until it's completely gone, including
+  // one still opening or closing. Only a fully open window ("in") is closed
+  // (its X; Escape as a fallback); an animating one is left to finish.
+  // True when no message window is open or animating.
   async function closeMessageWindow() {
-    if (!messageWindowOpen()) return true;
-    const open = openMessageWindows();
-    for (const m of open) {
-      const x = m.querySelector('[data-dismiss="modal"]');
-      if (x) x.click();
-      else m.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true }));
-    }
+    if (!messageWindowBusy()) return true;
+    let closing = false;
     try {
-      await waitFor(() => !messageWindowOpen(), 5000);
+      await waitFor(() => {
+        if (!messageWindowBusy()) return true;
+        if (!closing) {
+          const fullyOpen = openMessageWindows().filter((m) => m.classList.contains("in"));
+          for (const m of fullyOpen) {
+            const x = m.querySelector('[data-dismiss="modal"]');
+            if (x) x.click();
+            else m.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true }));
+            closing = true;
+          }
+        }
+        return false;
+      }, 10000);
     } catch (e) {
       return false;
     }
-    // Let the fade-out and backdrop finish before opening the next one.
-    try { await waitFor(() => !document.querySelector(".modal-backdrop"), 1500); } catch (e) { /* harmless */ }
-    await new Promise((r) => setTimeout(r, 300));
+    await sleep(300);
     return true;
   }
 
@@ -279,6 +383,100 @@
 
   const daysAgoText = (d) => (d === 0 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`);
 
+  // ---------- the CRM's own message history (read-only) ----------
+  // /customers/<id>/customer_messages.json?message_type=sms, newest first:
+  // rows of {user, category, message_type: "outgoing"|"incoming",
+  // status: "sent"|"failed"|"bounced"|"received", message,
+  // created_at: "MM/DD/YYYY hh:mm AM"}. user "SYSTEM" = the CRM's own
+  // automated texts. Null when it can't be read.
+  async function fetchSmsHistory(customerId) {
+    if (!customerId) return null;
+    try {
+      const params = new URLSearchParams({ message_type: "sms", take: 20, skip: 0, page: 1, pageSize: 20 });
+      const resp = await fetch(`/customers/${customerId}/customer_messages.json?${params}`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      if (!resp.ok) return null;
+      const payload = await resp.json();
+      return Array.isArray(payload && payload.data) ? payload.data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // "10/01/2026 10:31 AM" (CRM format, local time) or ISO -> epoch ms, or null.
+  function parseCrmDate(s) {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec((s || "").trim());
+    if (m) {
+      let h = Number(m[4]) % 12;
+      if (m[6] && m[6].toUpperCase() === "PM") h += 12;
+      if (!m[6]) h = Number(m[4]);
+      return new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]), h, Number(m[5])).getTime();
+    }
+    const t = Date.parse(s || "");
+    return isNaN(t) ? null : t;
+  }
+
+  const isOutgoingOk = (row) => row && row.message_type === "outgoing" && !/^(failed|bounced)$/i.test(row.status || "");
+
+  // When a STAFF member last texted this customer (any computer, or typed
+  // straight into the CRM). The CRM's automated texts ("SYSTEM") and
+  // failed/bounced ones don't count. undefined = history unavailable.
+  async function lastStaffTextAt(customerId) {
+    const rows = await fetchSmsHistory(customerId);
+    if (!rows) return undefined;
+    for (const row of rows) {
+      if (isOutgoingOk(row) && row.user && row.user !== "SYSTEM") {
+        const t = parseCrmDate(row.created_at);
+        if (t) return t;
+      }
+    }
+    return null;
+  }
+
+  // Is this message in the customer's CRM history, sent at/after `since`?
+  // (CRM times are to the minute, so allow 2 minutes of slack.)
+  function messageInHistory(rows, text, since) {
+    const want = normText(text);
+    if (!want) return false;
+    return rows.some((row) => {
+      if (!isOutgoingOk(row)) return false;
+      const t = parseCrmDate(row.created_at);
+      if (t && t < since - 120000) return false;
+      const have = normText(row.message);
+      return have && (have.includes(want) || want.includes(have));
+    });
+  }
+
+  // ---------- sending hours (auto-send only) ----------
+  // batch.sendWindow = {start: "09:00", end: "20:00"} (24h, local time), or
+  // null = any time. A window that crosses midnight (e.g. 22:00-06:00) works.
+  function minutesOf(hhmm) {
+    const m = /^(\d{1,2}):(\d{2})/.exec(hhmm || "");
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  }
+
+  function insideSendingHours(win, now) {
+    if (!win) return true;
+    const s = minutesOf(win.start);
+    const e = minutesOf(win.end);
+    if (s === null || e === null || s === e) return true;
+    const d = now || new Date();
+    const n = d.getHours() * 60 + d.getMinutes();
+    return s < e ? n >= s && n < e : n >= s || n < e;
+  }
+
+  function fmtTime(hhmm) {
+    const mins = minutesOf(hhmm);
+    if (mins === null) return hhmm || "";
+    const h = Math.floor(mins / 60);
+    const mm = String(mins % 60).padStart(2, "0");
+    return `${h % 12 || 12}:${mm} ${h < 12 ? "AM" : "PM"}`;
+  }
+
+  const PAUSE_RECHECK_MS = 15000;
+
   // Bumped by Start and Stop so timers from an old/stopped run (auto-send
   // click, advance-to-next) can't fire after the user hit Stop.
   let runId = 0;
@@ -325,9 +523,10 @@
   }
 
   // Move past the current contact. outcome: {sent: true} or
-  // {skipped: "<reason>", failure: true|false}. `failure` counts toward the
-  // consecutive-failure stop; a plain skip (e.g. unconfirmed after reload)
-  // doesn't.
+  // {skipped: "<reason>", failure: true|false, recordSent?: true}. `failure`
+  // counts toward the consecutive-failure stop; a plain skip (e.g.
+  // unconfirmed after reload) doesn't. `recordSent` = we can't tell whether
+  // it went out, so count it for the re-text cooldown to be safe.
   async function advance(myRun, outcome) {
     const batch = await ownedBatch(myRun);
     if (!batch) return;
@@ -340,6 +539,7 @@
     } else {
       batch.stats.skipped.push({ name: contact.name, reason: outcome.skipped });
       if (outcome.failure) batch.consecutiveFailures = (batch.consecutiveFailures || 0) + 1;
+      if (outcome.recordSent) await recordSent(contact.phone);
     }
     batch.inFlight = null;
     batch.index++;
@@ -356,7 +556,7 @@
     }
     await saveBatch(batch);
     const delayMs = outcome.sent && batch.autoSend ? Math.max(1, batch.delaySec || 5) * 1000 : 1500;
-    setTimeout(() => openAndFillContact(myRun), delayMs);
+    later(() => openAndFillContact(myRun), delayMs);
   }
 
   async function openAndFillContact(myRun) {
@@ -371,15 +571,36 @@
     // Send was clicked for this contact but the page reloaded before it was
     // confirmed - it may well have gone out, so never send it again.
     if (batch.inFlight === index) {
-      await advance(myRun, { skipped: "send not confirmed before the page reloaded - check it in the CRM", failure: false });
+      await advance(myRun, { skipped: "send not confirmed before the page reloaded - check it in the CRM", failure: false, recordSent: true });
       return;
     }
-    // Checked again right before texting (not just at Load): catches people
-    // texted since the list was loaded, e.g. Stop then Start on the same list.
+    // Auto-send only texts inside the chosen sending hours; outside them it
+    // waits (checking every PAUSE_RECHECK_MS) and carries on by itself.
+    if (batch.autoSend && !insideSendingHours(batch.sendWindow)) {
+      showBadge(
+        `Auto-send paused - outside sending hours (${fmtTime(batch.sendWindow.start)} to ${fmtTime(batch.sendWindow.end)}). ` +
+          `It continues by itself at ${fmtTime(batch.sendWindow.start)}, starting with contact ${index + 1} of ${batch.contacts.length}. Stop in the popup to cancel.`,
+        "#b7791f"
+      );
+      later(() => openAndFillContact(myRun), PAUSE_RECHECK_MS);
+      return;
+    }
+    // Re-text cooldown, checked right before texting (not just at Load):
+    // first this browser's own record, then the CRM's message history - which
+    // also knows texts sent from other computers or typed into the CRM.
     const recent = textedWithin(await getSentLog(), contact.phone, batch.cooldownDays);
     if (recent !== null) {
       await advance(myRun, { skipped: `already texted ${daysAgoText(recent)}`, failure: false });
       return;
+    }
+    if (batch.cooldownDays > 0 && contact.id) {
+      showBadge(`Checking ${contact.name}'s message history...`);
+      const at = await lastStaffTextAt(contact.id);
+      if (myRun !== runId) return;
+      if (at && Date.now() - at < batch.cooldownDays * 86400000) {
+        await advance(myRun, { skipped: `already texted ${daysAgoText(Math.max(0, Math.floor((Date.now() - at) / 86400000)))} (CRM history)`, failure: false });
+        return;
+      }
     }
     showBadge(`Finding ${contact.name} (${index + 1} of ${batch.contacts.length})...`);
 
@@ -502,7 +723,7 @@
         `Auto-sending to ${contact.name} (${index + 1} of ${batch.contacts.length}) - no manual review`,
         "#a33"
       );
-      setTimeout(async () => {
+      later(async () => {
         if (myRun !== runId || awaitingSendFor !== contact) return;
         // Right before the irreversible click: only click when the visible
         // box for THIS contact holds this message. The CRM gets a few
@@ -540,13 +761,18 @@
         markSendClicked();
         sendBtn.click();
       }, 400);
-      // If the CRM rejects the send, the box just stays open. Skip and keep
-      // going rather than stall; the skip is logged, and repeated failures
-      // stop the run. Never resend: the send may have gone out undetected.
-      setTimeout(() => {
+      // If nothing has happened after SEND_CONFIRM_TIMEOUT_MS (e.g. the CRM
+      // rejected the send and left the box open), settle it: confirm via the
+      // CRM's history if Send was clicked; otherwise skip. Either way the run
+      // carries on; repeated failures stop it. Never resend.
+      later(() => {
         if (myRun !== runId || awaitingSendFor !== contact) return;
-        awaitingSendFor = null;
-        advance(myRun, { skipped: "send not confirmed within 20s - check it in the CRM", failure: true });
+        if (sendClicked) {
+          confirmSend(contact, myRun);
+        } else {
+          awaitingSendFor = null;
+          advance(myRun, { skipped: `Send was never clicked within ${SEND_CONFIRM_TIMEOUT_MS / 1000}s ${pageState()}`, failure: true });
+        }
       }, SEND_CONFIRM_TIMEOUT_MS);
     } else {
       showReadyBadge(contact, index + 1, batch.contacts.length);
@@ -581,6 +807,11 @@
   // rather than closing it.
   let sendClickedBox = null;
   let sendClickedText = "";
+  let sendClickedAt = 0;
+  // When the CRM's green success banner (#flash_notice "Message is sended")
+  // last appeared. The CRM adds it only after a send succeeds, so it is the
+  // proof that a text went out.
+  let lastBannerAt = 0;
 
   function fillBox(box, text) {
     box.value = text;
@@ -621,7 +852,7 @@
     let lastSeen = Date.now();
     let tabFixes = 0;
     let lastTabFix = 0;
-    const stop = () => { done = true; obs.disconnect(); clearInterval(iv); };
+    const stop = () => { done = true; obs.disconnect(); stopTick(); };
     const check = () => {
       if (done) return;
       if (myRun !== runId || awaitingSendFor !== contact) { stop(); return; }
@@ -632,7 +863,7 @@
         // message cleared out of it) means the send went through.
         if (sendClicked && sendClickedText && (box !== sendClickedBox || !normText(box.value))) {
           stop();
-          handleSendDetected();
+          confirmSend(contact, myRun);
           return;
         }
         if (!sendClicked && box !== filledBox && rendered && !normText(box.value) && smsFormBelongsTo(contact)) {
@@ -653,7 +884,7 @@
       if (Date.now() - lastSeen < CLOSED_AFTER_MS) return;
       stop();
       if (sendClicked) {
-        handleSendDetected();
+        confirmSend(contact, myRun);
       } else if (autoSend) {
         awaitingSendFor = null;
         advance(myRun, { skipped: `message box closed before sending ${pageState()}`, failure: true });
@@ -667,7 +898,7 @@
     // tab; the interval is a fallback.
     const obs = new MutationObserver(check);
     obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
-    const iv = setInterval(check, 300);
+    const stopTick = every(check, 300);
   }
 
   // Capture phase on window, so the CRM's own handlers on the message box
@@ -718,6 +949,7 @@
   function markSendClicked() {
     if (!awaitingSendFor || sendClicked) return;
     sendClicked = true;
+    sendClickedAt = Date.now();
     sendClickedBox = getSmsTextarea();
     sendClickedText = normText(sendClickedBox && sendClickedBox.value);
     // Mark it in flight too, so a reload right now can't bring this
@@ -735,7 +967,6 @@
     if (observerStarted) return;
     observerStarted = true;
     const observer = new MutationObserver((mutations) => {
-      if (!awaitingSendFor || !sendClicked) return;
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -744,7 +975,8 @@
             node.classList?.contains("alert-success") ||
             node.querySelector?.(".alert-success");
           if (isSuccessBanner) {
-            handleSendDetected();
+            lastBannerAt = Date.now();
+            if (awaitingSendFor && sendClicked) handleSendDetected();
             return;
           }
         }
@@ -760,6 +992,44 @@
     awaitingSendFor = null;
     showBadge(`Sent to ${sentContact.name}. Moving to next...`, "#2a7a2a");
     await advance(myRun, { sent: true });
+  }
+
+  const BANNER_GRACE_MS = 8000;
+
+  // Send was clicked and then the window closed/refreshed (or time ran out)
+  // without the success banner yet. Decide whether the text really went
+  // out: wait a little for the banner, then look for the message in the
+  // customer's CRM history. Only a confirmed send counts as sent - a send
+  // the CRM rejected is NOT counted as sent any more.
+  async function confirmSend(contact, myRun) {
+    if (awaitingSendFor !== contact) return;
+    awaitingSendFor = null; // stop the other watchers; the banner is tracked via lastBannerAt
+    const clickedAt = sendClickedAt;
+    const text = sendClickedText;
+    showBadge(`Checking that the text to ${contact.name} went out...`);
+    let sent = lastBannerAt >= clickedAt;
+    if (!sent) {
+      try { await waitFor(() => lastBannerAt >= clickedAt, BANNER_GRACE_MS); sent = true; } catch (e) { /* no banner */ }
+    }
+    let historyRead = false;
+    if (!sent && contact.id) {
+      const rows = await fetchSmsHistory(contact.id);
+      if (rows) {
+        historyRead = true;
+        sent = messageInHistory(rows, text, clickedAt);
+      }
+    }
+    if (myRun !== runId) return;
+    if (sent) {
+      showBadge(`Sent to ${contact.name}. Moving to next...`, "#2a7a2a");
+      await advance(myRun, { sent: true });
+    } else if (historyRead) {
+      // Not in their history: the CRM didn't send it. Safe to text later.
+      await advance(myRun, { skipped: `NOT sent - the CRM didn't confirm it (no "Message is sended" banner, not in their message history) ${pageState()}`, failure: true });
+    } else {
+      // Can't tell - count it for the re-text cooldown so nobody gets it twice.
+      await advance(myRun, { skipped: `send not confirmed (no "Message is sended" banner; couldn't read their history) - check it in the CRM`, failure: true, recordSent: true });
+    }
   }
 
   // ---------- live CRM fetch: same JSON endpoint and filter logic as the
@@ -1105,6 +1375,7 @@
     batch.consecutiveFailures = 0;
     await saveBatch(batch);
     activeRun = true;
+    startHeartbeat();
     openAndFillContact(myRun);
   }
 
@@ -1113,9 +1384,17 @@
   // its own key: re-saving the whole batch here could overwrite a newer
   // batch (e.g. just-advanced index) with a stale copy.
   const HEARTBEAT_KEY = "famfitHeartbeat";
-  setInterval(() => {
-    if (activeRun) chrome.storage.local.set({ [HEARTBEAT_KEY]: Date.now() });
-  }, 5000);
+  // Only ticks while this tab drives a run (so an idle CRM tab doesn't keep
+  // the extension's service worker awake).
+  let stopHeartbeat = null;
+  function startHeartbeat() {
+    if (stopHeartbeat) return;
+    chrome.storage.local.set({ [HEARTBEAT_KEY]: Date.now() });
+    stopHeartbeat = every(() => {
+      if (!activeRun) { stopHeartbeat(); stopHeartbeat = null; return; }
+      chrome.storage.local.set({ [HEARTBEAT_KEY]: Date.now() });
+    }, 5000);
+  }
 
   async function lastRunActivity(batch) {
     const hb = (await chrome.storage.local.get(HEARTBEAT_KEY))[HEARTBEAT_KEY] || 0;
@@ -1131,7 +1410,7 @@
     if (b.autoSend && b.running && idle < AUTO_RESUME_WINDOW_MS) {
       const wait = Math.max(3000, RESUME_STALE_MS - idle);
       showBadge(`Page reloaded - resuming auto-send at contact ${b.index + 1} of ${b.contacts.length} in ${Math.round(wait / 1000)}s (Stop in the popup to cancel)...`, "#b7791f");
-      setTimeout(async () => {
+      later(async () => {
         const now = await getBatch();
         // Stopped meanwhile, or another tab is actively running it.
         if (!now || !now.running) { hideBadge(); return; }

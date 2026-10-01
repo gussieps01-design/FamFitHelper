@@ -1,13 +1,13 @@
 # FamFitHelper - Handoff (2026-10-01)
 
 ## Status in one line
-The Chrome extension (v1.4.2) works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. The desktop app is archived. Nothing is pending; `master` is clean and matches GitHub.
+The Chrome extension **v1.6.0** is the **stable baseline**: the user confirmed it on the live CRM (2026-10-01). It adds, on top of v1.5.x (all known gaps fixed), 8 human-sounding starter templates, user-saved templates with per-send quick edits that revert, field-typo protection, and computer-wide template sharing through a JSON file. The desktop app is archived.
 
-## STABLE BASELINE: extension v1.4.2
+## STABLE BASELINE: extension v1.6.0
 **Build every future version on top of it.**
-- git: tag **`extension-stable-1.4.2`** and branch **`stable`**. `master` contains the same extension code (0 files differ).
-- Release (marked "stable baseline"): https://github.com/gussieps01-design/FamFitHelper/releases/tag/extension-v1.4.2
-- Start new work: `git checkout -b <new-branch> extension-stable-1.4.2` (or from `master`). Compare: `git diff extension-stable-1.4.2`. If a later version breaks, the baseline zip is the fallback.
+- git: tag **`extension-stable-1.6.0`** and branch **`stable`**. `master` contains the same extension code. Older fallback: tag `extension-stable-1.4.2` (release `extension-v1.4.2`).
+- Release (marked "stable baseline"): https://github.com/gussieps01-design/FamFitHelper/releases/tag/extension-v1.6.0
+- Start new work: `git checkout -b <new-branch> extension-stable-1.6.0` (or from `master`). Compare: `git diff extension-stable-1.6.0`. If a later version breaks, the baseline zip is the fallback.
 - **Don't regress the live-CRM behaviour** (see "CRM facts"): close any open message window before opening the next contact (the open link is a toggle); use the *visible* SMS form; record the extension's own Send click directly; treat the window closing/refreshing or the green banner as "sent".
 
 ## What's in the repo
@@ -34,16 +34,25 @@ The Chrome extension (v1.4.2) works on the live CRM (user-confirmed: auto-send "
 ## Working on it - lessons learned
 - **Mock tests are not enough.** v1.2-v1.4.1 all passed a local mock CRM but failed live. The breakthrough was recording the real CRM (passive MutationObserver + event logger in a Claude-group Chrome tab while the user clicked). Do that first when something fails live.
 - Claude is blocked from opening message windows or sending on the live CRM (real customers); live checks need the user. Read-only GETs to `/customers_grid.json` are fine.
-- The mock harness used for tests lived in a session scratchpad and is **not** in the repo. Rebuild one if needed; include the toggle, refresh-after-send and duplicate-id behaviour above.
+- **Test against `mock-crm/` first** (in the repo since v1.5.1): `node mock-crm/server.js`, then http://localhost:4567/customers?harness=1 runs the real content.js end to end against a mock built from the recording (real jQuery 1.12 / Bootstrap 3 / jquery_ujs, the CRM's own Send code, the grid's filter quirks, message history). The control panel `/mock` switches refresh/close-after-send, rejects, latency, logged out, history down; `?slow=<ms>` slows window animations; `?content=/mock/<file>.js` tests another copy of content.js side by side. `node mock-crm/make-test-extension.js` builds a copy that works ONLY on the mock, to try the real popup. See `mock-crm/README.md`. On its first run the mock caught a v1.5.0 bug (opening the next contact while the CRM window was still animating) - fixed in v1.5.1.
 - After reloading the unpacked extension, refresh the CRM tab (old content scripts go dead). Updating = Remove + Load unpacked the new folder (unzipping elsewhere does NOT update Chrome's copy); the popup title shows the version actually loaded.
 - Releases: zip of `chrome-extension/` + `HOW-TO-USE.txt` via `git archive`, published with `gh release create extension-vX.Y.Z --latest` (gh is installed at `C:\Program Files\GitHub CLI\gh.exe`, signed in). Bump `manifest.json` version each release.
 
-## Known gaps
-- Click Send, the CRM rejects it, then close the box -> counted as sent (rare; no-phone contacts are excluded).
-- Chrome slows timers (pacing, 20s confirm) in hidden tabs; keep the CRM tab visible during long runs.
-- The re-text cooldown only knows texts sent from the same Chrome profile.
-- No time-of-day limit on auto-send; start runs during reasonable hours.
-- True auto-update would need the Chrome Web Store (unlisted, $5 developer account); currently users update manually from the release page.
+## Known gaps -> fixed in v1.5.x (shipped in the v1.6.0 stable baseline)
+All five gaps listed for v1.4.2 are fixed in v1.5.0. These were confirmed live as part of v1.6.0.
+- **Rejected send then closed box counted as sent** -> "sent" now requires the CRM's green `#flash_notice` banner ("Message is sended", only added on success) or, failing that, the message appearing in the customer's CRM history (`/customers/<id>/customer_messages.json?message_type=sms`). Not in history = reported "NOT sent" (not counted for the cooldown). History unreadable = "not confirmed" and counted for the cooldown (no double texts).
+- **Hidden tabs slowed timers** -> `background.js` service worker provides wake-ups over a `"famfit-timer"` port (`later()` / `every()` in content.js race it against the page's own setTimeout; requests at least every 20s keep the worker alive; reconnects if the worker restarts).
+- **Cooldown only knew this Chrome profile** -> right before each text the extension also reads the CRM's message history: the newest outgoing, non-failed/bounced text by a staff user (not `SYSTEM`) within the cooldown -> skip "(CRM history)".
+- **No time-of-day limit** -> popup "Only auto-send between [09:00] and [20:00]" (default on); `batch.sendWindow`; outside it auto-send shows a paused badge and rechecks every 15s; windows may cross midnight; manual mode is not limited.
+- **No auto-update** -> can't be done without the user's own Chrome Web Store developer account ($5). Prepared everything: icons (`chrome-extension/icons/`), minimal permissions (only `storage` + the CRM host; unused `activeTab`/`scripting` removed), `store/STORE-LISTING.md`, `store/PRIVACY.md`, `store/PUBLISHING.md`, and a `FamFitHelper-WebStore-vX.Y.Z.zip` (manifest at root) attached to each release.
+
+CRM message history format (read-only GET, verified live): `{data: [...], total}` newest first; rows `{user, category: "sms"|"sms_response", message_type: "outgoing"|"incoming", status: "sent"|"failed"|"bounced"|"received", contact, message, subject, created_at: "MM/DD/YYYY hh:mm AM", error_message}`. `user: "SYSTEM"` = the CRM's automated texts.
 
 ## Desktop app (archived 2026-10-01)
 User decision: the extension replaces it. Removed from `master` in PR #2; last code at tag `desktop-app-final`; exe in release `v1.1.0` (titled "desktop app - archived"). Local build leftovers (dist/, build/, .spec, __pycache__) were deleted. It had unfixed bugs (CRM worker errors leave the UI stuck via a `lambda: ...(e)` NameError; "Signed up within" never matches due to the CRM's date format; Copy & Next marks contacts done without copying when placeholders are blank; corrupt JSON crashes startup) - don't revive it without fixing those.
+
+## Templates and sharing (v1.6.0)
+- `templates.js`: 8 starters x 3 versions (Personal training, Holiday notice, Relocation, Membership expired win-back, Former members, Free pass / trial follow-up, Missed guests, Re-engagement). Wording was modelled on a read-only sample of staff-sent texts in the CRM (short, one concrete question, "stop by", "shoot me a text"); avoid "I'd be happy to", "circling back", "no pressure".
+- Saved templates: `chrome.storage.local.famfitSavedTemplates` = [{id,name,text,updatedAt, deleted?}] (deletes are 90-day tombstones). Edits in the popup box are per-send only and are never stored (closing or re-clicking reverts); Save keeps one.
+- Sharing: `sharedfile.js` + `shared.html`/`shared.js` merge with one user-picked JSON file (File System Access API, handle in IndexedDB). Chrome may ask to re-allow after a restart ("Reconnect").
+- Tests: `http://localhost:4567/popup-tests` (35 checks) and the sending harness `/customers?harness=1` (14).

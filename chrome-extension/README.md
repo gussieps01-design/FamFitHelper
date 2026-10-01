@@ -1,4 +1,4 @@
-# FamFitHelper CRM Assist (Chrome extension, v1.4)
+# FamFitHelper CRM Assist (Chrome extension, v1.5)
 
 Texts a filtered list of CRM customers one at a time from a message template. By default you click Send for each person and it moves on to the next. The opt-in **Auto-send** mode sends through the whole list by itself.
 
@@ -15,7 +15,7 @@ Simple step-by-step instructions: [../HOW-TO-USE.txt](../HOW-TO-USE.txt).
 - Remove the extension and **Load unpacked** the new folder, or copy the new files over the folder Chrome already uses and click the reload arrow.
 - Then **refresh the CRM tab**. An already-open tab keeps the old version.
 
-For true automatic updates, the extension would need to be published (e.g. unlisted) on the Chrome Web Store.
+For automatic updates, publish it (unlisted) on the Chrome Web Store - everything needed is in [../store/](../store/PUBLISHING.md).
 
 ## Use
 
@@ -29,10 +29,12 @@ For true automatic updates, the extension would need to be published (e.g. unlis
 4. **Text how many**: leave it blank for everyone loaded, or type a number to text only the first N.
 5. Pick a template. The optional Staff/Location fallbacks are used when a contact has none in the CRM.
    - Each template holds several **versions** of the same pitch, separated by a line with just `---`. With **Rotate between versions** on (the default), each batch starts at a random version and each contact gets the next one. Turn it off to send everyone the first version.
-   - All 20 starter templates come with 3 versions each. Edit, add or remove versions right in the box.
+   - There are 8 starter templates (Personal training, Holiday notice, Relocation, Membership expired win-back, Former members, Free pass / trial follow-up, Missed guests, Re-engagement), each with 3 versions. Edit, add or remove versions right in the box.
+   - **Your own messages:** pick "Write my own message...", type it, name it and click Save. Saved templates appear under "My saved templates" and can be edited (Save changes), copied (Save as new), reverted (Put back saved wording) or deleted. **Edits in the message box are for that send only**: they're never stored, so closing the popup or clicking the template again puts the saved wording back (a running batch keeps the wording it started with). Starters are never changed; edit one and use "Save as my own template". The Insert buttons add `{{first_name}}`, `{{last_name}}`, `{{staff}}`, `{{location}}` or a new `---` version. A message with an unknown or malformed `{{field}}` can't be saved or started. Saved templates are kept in `chrome.storage.local` under `famfitSavedTemplates` (per Chrome profile).
+   - **Shared on this computer:** "Share on this computer..." opens `shared.html`, where you create one JSON file (first profile) or pick the same file (other profiles). The file handle is remembered in IndexedDB (no new permissions). The popup merges with the file when it opens and after every save/delete: the newest edit of each template wins, deletes are kept as markers (90 days) so they don't come back, and two different templates with the same name both survive ("Name (2)"). A damaged, foreign or newer-version file is never overwritten, and a save always works locally even if the file can't be reached. After a Chrome restart Chrome may ask again: click "Reconnect".
 6. **Start batch**:
    - **Manual** (Auto-send off): each person's SMS box opens pre-filled, with their name and phone shown large in the corner. Review it, then click Send or press **Ctrl+Enter**. It moves on when the CRM confirms the send.
-   - **Auto-send**: set "seconds between auto-sends" (default 5), start, and confirm. Keep the CRM tab visible, in its own window if you like, because Chrome slows down hidden tabs.
+   - **Auto-send**: set "seconds between auto-sends" (default 5) and the **sending hours** (default 9:00 AM - 8:00 PM), start, and confirm. It keeps its pace even when the CRM tab is in the background.
 7. At the end the badge shows "Done: X sent, Y skipped", and the popup lists who was skipped and why.
 
 Closing the popup is safe; everything is saved and restored when it reopens.
@@ -41,25 +43,29 @@ Closing the popup is safe; everything is saved and restored when it reopens.
 
 - **Searching**: Status, Priority, Staff, Idle and Signed-within are sent to the CRM as filters, so the whole customer list is searched. Location is checked by the extension. Every result is re-checked against your filters.
 - **Always left out**: contacts marked Dead, unsubscribed, with a bounced phone, or with no phone. A phone number shared by several customers is texted once.
-- **Re-text cooldown** (the "days" box, default 7, 0 = off): anyone texted within that many days is left out at Load and skipped again right before texting. That also covers running the same list twice. The record of who was texted when is kept in this Chrome profile only, so it doesn't know about texts sent from other computers or directly in the CRM.
-- **Opening contacts**: CRM-loaded contacts are opened by their customer id, from any page. Pasted contacts have no id and must be visible on the current customer list page.
-- **"Sent"** means Send was clicked for that contact and then the CRM closed the message box or showed its green banner. Closing the box *without* clicking Send leaves that contact in place; click Start to bring them back.
+- **Re-text cooldown** (the "days" box, default 7, 0 = off): anyone texted within that many days is left out at Load and skipped again right before texting. Right before each text it also checks **the CRM's own message history** for that customer, so texts sent from other computers or typed straight into the CRM count too. The CRM's automated texts ("SYSTEM") and failed/bounced texts don't count.
+- **Sending hours** (auto-send only): outside them the run pauses and carries on by itself when they start again (a window can cross midnight, e.g. 10 PM - 6 AM). Manual mode isn't limited - a person is deciding.
+- **Opening contacts**: CRM-loaded contacts are opened by their customer id, from any page. Pasted contacts have no id and must be visible on the current customer list page. Any message window still open is closed first (the CRM's open link is a toggle).
+- **"Sent"** means Send was clicked for that contact AND the CRM confirmed it: its green "Message is sended" banner, or - if that doesn't show - the message appearing in the customer's CRM history. A send the CRM rejected is reported as **NOT sent** (safe to text later). If neither can be checked, it's reported as "not confirmed" and counted for the cooldown so nobody gets it twice.
 - **Safety checks**:
   - It only fills a freshly loaded message box for that exact contact.
   - A message with a blank `{{field}}` is never auto-sent.
   - Auto-send only clicks Send when the visible box holds exactly that contact's message.
 - **Long runs**:
-  - A contact that can't be opened, has a blank `{{field}}`, or isn't confirmed sent within 20 seconds is **skipped and logged**, never re-sent, and the run continues.
+  - A contact that can't be opened, has a blank `{{field}}`, or isn't confirmed is **skipped and logged**, never re-sent, and the run continues.
   - **3 failures in a row stop the run** (usually an expired login). Fix it and click Start to continue.
   - If the CRM page reloads mid-run, auto-send **resumes by itself** within about 15 seconds. A contact whose Send was already clicked when the page reloaded is skipped, never texted twice.
+  - Timers run in the extension's background worker, so a hidden tab doesn't slow the run down.
   - Only one CRM tab drives a run.
 - **Start vs. Stop**:
   - **Start** resumes a stored batch where it left off.
   - **Stop** ends it and saves the summary. After a Stop, Start begins a *new* batch from the loaded list, from the top. People already texted are skipped by the re-text cooldown, unless it's set to 0.
 
+## Permissions
+
+Only `storage` (settings and batch progress, in your browser) and access to `crm.healthyimagefitness.com`. See [../store/PRIVACY.md](../store/PRIVACY.md).
+
 ## Limits
 
 - Placeholders: `{{first_name}}`, `{{last_name}}`, `{{staff}}`, `{{location}}` (no appointment dates).
 - If the CRM's page layout or message box changes, this will likely need updating.
-- If you click Send, the CRM rejects it, and you then close the box, that contact is counted as sent.
-- There's no time-of-day limit; only start runs during reasonable hours.
