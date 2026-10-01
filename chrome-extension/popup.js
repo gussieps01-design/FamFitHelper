@@ -186,6 +186,9 @@ function collectFormState() {
     location: document.getElementById("location").value,
     autoSend: document.getElementById("autoSend").checked,
     delaySec: document.getElementById("delaySec").value,
+    sendHoursOn: document.getElementById("sendHoursOn").checked,
+    sendStart: document.getElementById("sendStart").value,
+    sendEnd: document.getElementById("sendEnd").value,
     cooldownDays: document.getElementById("cooldownDays").value,
     textCount: document.getElementById("textCount").value,
     loadedContacts,
@@ -222,6 +225,9 @@ async function restoreFormState() {
   updateVariantCount();
   document.getElementById("autoSend").checked = !!state.autoSend;
   document.getElementById("delaySec").value = state.delaySec || "5";
+  document.getElementById("sendHoursOn").checked = state.sendHoursOn !== false;
+  document.getElementById("sendStart").value = state.sendStart || "09:00";
+  document.getElementById("sendEnd").value = state.sendEnd || "20:00";
   document.getElementById("cooldownDays").value = state.cooldownDays != null && state.cooldownDays !== "" ? state.cooldownDays : "7";
   document.getElementById("textCount").value = state.textCount || "";
   if (state.loadedContacts && state.loadedContacts.length) {
@@ -267,7 +273,7 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
 [
   "fStatus", "fPriority", "fLocation", "fStaff",
   "fIdleMin", "fIdleMax", "fSignedWithin", "fMaxPages",
-  "staff", "location", "autoSend", "delaySec", "cooldownDays", "textCount",
+  "staff", "location", "autoSend", "delaySec", "sendHoursOn", "sendStart", "sendEnd", "cooldownDays", "textCount",
 ].forEach((id) => {
   document.getElementById(id).addEventListener("change", saveFormState);
 });
@@ -377,6 +383,10 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     location: document.getElementById("location").value,
     autoSend,
     delaySec: Math.max(1, numOrNull("delaySec") || 5),
+    // Auto-send only texts inside these hours (local time); null = any time.
+    sendWindow: document.getElementById("sendHoursOn").checked
+      ? { start: document.getElementById("sendStart").value || "09:00", end: document.getElementById("sendEnd").value || "20:00" }
+      : null,
     cooldownDays: cooldownDaysValue(),
     // Rotate: each batch starts at a random version, then takes the next
     // one per contact. Off: everyone gets the first version.

@@ -124,8 +124,18 @@
   </label>
   <div class="row" style="align-items:center;">
     <div style="flex:0 0 70px;"><input id="delaySec" type="number" min="1" value="5"></div>
-    <div class="muted" style="margin:0;">seconds between auto-sends. Keep the CRM tab visible (its own window is fine) - Chrome slows hidden tabs.</div>
+    <div class="muted" style="margin:0;">seconds between auto-sends.</div>
   </div>
+  <div class="row" style="align-items:center;flex-wrap:wrap;">
+    <label style="display:flex;align-items:center;gap:6px;margin:0;">
+      <input type="checkbox" id="sendHoursOn" style="width:auto;" checked>
+      <span>Only auto-send between</span>
+    </label>
+    <div style="flex:0 0 96px;"><input id="sendStart" type="time" value="09:00"></div>
+    <span style="font-size:12px;">and</span>
+    <div style="flex:0 0 96px;"><input id="sendEnd" type="time" value="20:00"></div>
+  </div>
+  <div class="muted" style="margin-top:2px;">Outside those hours auto-send pauses and carries on by itself when they start again.</div>
 
   <button id="startBtn">Start batch (pre-fill first contact)</button>
   <button id="stopBtn" class="secondary">Stop</button>

@@ -53,9 +53,11 @@ PART 2 - SEND A BATCH OF TEXTS
 4. (Optional) "Text how many": type a number to only text the first
    that many. Leave it empty to text everyone loaded.
 
-   "Days" box (default 7): anyone texted from this computer within
-   that many days is skipped, so nobody gets texted too often.
-   Change it to any number of days, or 0 to turn it off.
+   "Days" box (default 7): anyone a staff member texted within that
+   many days is skipped, so nobody gets texted too often. It checks
+   the CRM's own message history, so texts sent from other computers
+   or typed straight into the CRM count too (the CRM's automatic
+   texts don't). Change it to any number of days, or 0 to turn it off.
 
 5. Pick a message template. Check the text - {{first_name}}, {{staff}}
    and {{location}} get filled in for each person. If some people
@@ -79,9 +81,12 @@ PART 2 - SEND A BATCH OF TEXTS
 
    B) AUTO-SEND (sends by itself)
       - Check "Auto-send". Set "seconds between auto-sends" (5 is fine).
+      - Sending hours (default 9:00 AM to 8:00 PM): auto-send only
+        texts inside these hours. Outside them it waits and carries
+        on by itself when they start again.
       - Click "Start batch" and confirm.
-      - Put the CRM tab in its own window and leave it visible (not
-        minimized). Chrome slows down hidden tabs.
+      - It keeps going even if you switch to other tabs - just leave
+        the CRM tab open.
       - It texts everyone on the list by itself.
 
 7. When it's done, the box on the CRM page says "Done: X sent,
@@ -107,8 +112,9 @@ PART 3 - GOOD TO KNOW
   about 15 seconds.
 - If the popup says "refresh the CRM tab": press F5 on the CRM tab
   and try again.
-- Only text people during normal hours, and start with a small batch
-  (about 20) the first time.
+- Start with a small batch (about 20) the first time.
+- A person listed as "NOT sent" in the summary really wasn't texted
+  (the CRM didn't confirm it) - it's safe to text them later.
 
 
 ---------------------------------------------

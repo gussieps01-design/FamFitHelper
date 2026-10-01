@@ -1,7 +1,7 @@
 # FamFitHelper - Handoff (2026-10-01)
 
 ## Status in one line
-The Chrome extension (v1.4.2) works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. The desktop app is archived. Nothing is pending; `master` is clean and matches GitHub.
+The Chrome extension v1.4.2 works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. **v1.5.0** (all known gaps fixed) is built and mock-tested on branch `fix-gaps` / PR, published as a pre-release, and **waiting for the user's live test**. The desktop app is archived.
 
 ## STABLE BASELINE: extension v1.4.2
 **Build every future version on top of it.**
@@ -38,12 +38,15 @@ The Chrome extension (v1.4.2) works on the live CRM (user-confirmed: auto-send "
 - After reloading the unpacked extension, refresh the CRM tab (old content scripts go dead). Updating = Remove + Load unpacked the new folder (unzipping elsewhere does NOT update Chrome's copy); the popup title shows the version actually loaded.
 - Releases: zip of `chrome-extension/` + `HOW-TO-USE.txt` via `git archive`, published with `gh release create extension-vX.Y.Z --latest` (gh is installed at `C:\Program Files\GitHub CLI\gh.exe`, signed in). Bump `manifest.json` version each release.
 
-## Known gaps
-- Click Send, the CRM rejects it, then close the box -> counted as sent (rare; no-phone contacts are excluded).
-- Chrome slows timers (pacing, 20s confirm) in hidden tabs; keep the CRM tab visible during long runs.
-- The re-text cooldown only knows texts sent from the same Chrome profile.
-- No time-of-day limit on auto-send; start runs during reasonable hours.
-- True auto-update would need the Chrome Web Store (unlisted, $5 developer account); currently users update manually from the release page.
+## Known gaps -> fixed in v1.5.0 (branch `fix-gaps`, pre-release `extension-v1.5.0`)
+All five gaps listed for v1.4.2 are fixed in v1.5.0. **v1.5.0 still needs a live test by the user** before it becomes the new baseline - until then v1.4.2 stays the stable baseline and v1.5.0 is published as a GitHub *pre-release* (the popup's update notice ignores pre-releases).
+- **Rejected send then closed box counted as sent** -> "sent" now requires the CRM's green `#flash_notice` banner ("Message is sended", only added on success) or, failing that, the message appearing in the customer's CRM history (`/customers/<id>/customer_messages.json?message_type=sms`). Not in history = reported "NOT sent" (not counted for the cooldown). History unreadable = "not confirmed" and counted for the cooldown (no double texts).
+- **Hidden tabs slowed timers** -> `background.js` service worker provides wake-ups over a `"famfit-timer"` port (`later()` / `every()` in content.js race it against the page's own setTimeout; requests at least every 20s keep the worker alive; reconnects if the worker restarts).
+- **Cooldown only knew this Chrome profile** -> right before each text the extension also reads the CRM's message history: the newest outgoing, non-failed/bounced text by a staff user (not `SYSTEM`) within the cooldown -> skip "(CRM history)".
+- **No time-of-day limit** -> popup "Only auto-send between [09:00] and [20:00]" (default on); `batch.sendWindow`; outside it auto-send shows a paused badge and rechecks every 15s; windows may cross midnight; manual mode is not limited.
+- **No auto-update** -> can't be done without the user's own Chrome Web Store developer account ($5). Prepared everything: icons (`chrome-extension/icons/`), minimal permissions (only `storage` + the CRM host; unused `activeTab`/`scripting` removed), `store/STORE-LISTING.md`, `store/PRIVACY.md`, `store/PUBLISHING.md`, and a `FamFitHelper-WebStore-vX.Y.Z.zip` (manifest at root) attached to each release.
+
+CRM message history format (read-only GET, verified live): `{data: [...], total}` newest first; rows `{user, category: "sms"|"sms_response", message_type: "outgoing"|"incoming", status: "sent"|"failed"|"bounced"|"received", contact, message, subject, created_at: "MM/DD/YYYY hh:mm AM", error_message}`. `user: "SYSTEM"` = the CRM's automated texts.
 
 ## Desktop app (archived 2026-10-01)
 User decision: the extension replaces it. Removed from `master` in PR #2; last code at tag `desktop-app-final`; exe in release `v1.1.0` (titled "desktop app - archived"). Local build leftovers (dist/, build/, .spec, __pycache__) were deleted. It had unfixed bugs (CRM worker errors leave the UI stuck via a `lambda: ...(e)` NameError; "Signed up within" never matches due to the CRM's date format; Copy & Next marks contacts done without copying when placeholders are blank; corrupt JSON crashes startup) - don't revive it without fixing those.
