@@ -26,7 +26,7 @@ What it does:
 - **Remembers your work.** Filters, template and loaded contacts survive closing the popup. "Text how many" limits a batch. After a run, the popup shows how many were sent and who was skipped and why.
 - **Update notice.** The popup tells you when a newer version is on the releases page.
 
-**Stable baseline:** v1.4.2 is the known-good version (git tag `extension-stable-1.4.2`, branch `stable`).
+**Stable baseline:** v1.6.0 is the known-good version (git tag `extension-stable-1.6.0`, branch `stable`).
 
 **Automatic updates:** to have Chrome update the extension by itself, publish it (unlisted) on the Chrome Web Store - see [store/PUBLISHING.md](store/PUBLISHING.md).
 
