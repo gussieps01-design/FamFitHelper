@@ -74,8 +74,15 @@ PART 2 - SEND A BATCH OF TEXTS
    for it and click "Save template" to keep it - it then shows up
    under "My saved templates". To change one later, pick it, edit the
    text (or its name) and click "Save changes". "Save as new" makes a
-   copy, "Undo changes" goes back to the last saved text, and "Delete"
-   removes it. You can also edit a starter template and click "Save as
+   copy, "Put back saved wording" undoes your edits, and "Delete"
+   removes it.
+
+   QUICK EDITS FOR ONE SEND: you can type in the message box to add or
+   cut words before you start a batch (for example a different day or
+   a special). That change is only for this send. It is NOT kept: close
+   the popup, or click the template in the list again, and the saved
+   wording is back. Click "Save changes" / "Save as my own template"
+   only if you want to keep an edit. You can also edit a starter template and click "Save as
    my own template" - the starter itself never changes. "Preview"
    shows exactly what people will get.
 

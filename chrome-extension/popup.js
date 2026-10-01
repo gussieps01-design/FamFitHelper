@@ -201,7 +201,7 @@ function refreshTemplateUI() {
   const hasText = templateText.value.trim() !== "";
 
   templateHintEl.textContent = bi >= 0
-    ? FAMFIT_TEMPLATES[bi].hint + " Edit freely - the starter itself is never changed."
+    ? FAMFIT_TEMPLATES[bi].hint + " You can add to it or cut from it for this send; it goes back to normal when you close this or click the template again."
     : isSaved ? "Your saved template."
     : "Type your own message, then give it a name and click Save to keep it.";
   templateNameRow.style.display = "block";
@@ -213,7 +213,7 @@ function refreshTemplateUI() {
   tplSaveAsBtn.style.display = isNew ? "none" : "";
   tplSaveAsBtn.textContent = bi >= 0 ? "Save as my own template" : "Save as new";
   tplSaveAsBtn.disabled = tplBusy;
-  tplUndoBtn.textContent = isNew ? "Clear" : "Undo changes";
+  tplUndoBtn.textContent = isNew ? "Clear" : "Put back saved wording";
   tplUndoBtn.disabled = tplBusy || (isNew ? !hasText && !templateNameEl.value : !dirty);
   tplDeleteBtn.style.display = isSaved ? "" : "none";
   tplDeleteBtn.disabled = tplBusy;
@@ -222,7 +222,9 @@ function refreshTemplateUI() {
   templateProblemsEl.style.display = problems.length ? "block" : "none";
   templateProblemsEl.textContent = problems.join(" ");
 
-  templateInfoEl.textContent = dirty && (bi >= 0 || isSaved || hasText) ? "Edited - not saved." : "";
+  templateInfoEl.textContent = dirty && (bi >= 0 || isSaved)
+    ? "Edited for this send only. Closing this or clicking the template again puts the saved wording back."
+    : dirty && hasText ? "Not saved - this message is lost when you close this unless you save it." : "";
   updateVariantCount();
   updatePreview();
 }
@@ -387,14 +389,22 @@ async function deleteTemplate() {
   await saveFormState();
 }
 
+// Picking a template (even the one already showing) loads its saved wording,
+// so a quick edit for one send is wiped by clicking the template again. To make
+// that possible the list shows nothing selected while it's open; it snaps
+// back if you click away without choosing.
+templateSelect.addEventListener("focus", () => { if (!tplBusy) templateSelect.selectedIndex = -1; });
+templateSelect.addEventListener("blur", () => { if (templateSelect.selectedIndex === -1) templateSelect.value = currentKey; });
 templateSelect.addEventListener("change", async () => {
   const wanted = templateSelect.value;
-  if (wanted === currentKey) return;
-  if (isDirty() && templateText.value.trim() && !confirm("You have unsaved changes to this message. Switch anyway and lose them?")) {
+  if (!wanted) { templateSelect.value = currentKey; return; }
+  // Only a message written from scratch has nowhere to come back from.
+  if (currentKey === NEW_KEY && templateText.value.trim() && !confirm("Throw away the message you typed? It hasn't been saved.")) {
     templateSelect.value = currentKey;
     return;
   }
   selectTemplate(wanted);
+  templateSelect.blur();
   await saveFormState();
 });
 templateText.addEventListener("input", () => { setTemplateMsg(""); refreshTemplateUI(); saveFormState(); });
@@ -525,9 +535,9 @@ function collectFormState() {
     fSignedWithin: document.getElementById("fSignedWithin").value,
     fMaxPages: document.getElementById("fMaxPages").value,
     templateKey: currentKey,
-    templateName: templateNameEl.value,
-    templateText: templateText.value,
-    templateDirty: isDirty(), // only a real unsaved edit is restored as a draft
+    // Edits made in the message box are for THIS send only: they are not
+    // stored, so closing the popup (or clicking the template again) reverts
+    // to the saved wording. Save keeps one permanently.
     templatesVersion: 3, // 3 = template picked by key, saved templates, unsaved drafts
     rotateVariants: document.getElementById("rotateVariants").checked,
     staff: document.getElementById("staff").value,
@@ -565,20 +575,10 @@ async function restoreFormState() {
   // Templates (v3 state): same template, plus any unsaved edit. State from an
   // older popup (picked by number from a different list) just starts fresh.
   if (state.templatesVersion === 3 && typeof state.templateKey === "string") {
-    if (keyExists(state.templateKey)) {
-      // A clean template is re-read from storage (another profile may have
-      // changed it); only a genuine unsaved edit comes back as a draft.
-      // (A name typed for a copy of a starter is kept too.)
-      selectTemplate(
-        state.templateKey,
-        state.templateDirty ? { text: state.templateText, name: state.templateName }
-          : savedIdOf(state.templateKey) === null && state.templateName ? { name: state.templateName }
-          : undefined
-      );
-    } else {
-      // A saved template that no longer exists keeps its text as a draft.
-      selectTemplate(NEW_KEY, { text: state.templateText, name: state.templateName });
-    }
+    // Reopen on the same template with its SAVED wording (temporary edits
+    // from last time are deliberately gone). A template that no longer
+    // exists falls back to the first starter.
+    selectTemplate(keyExists(state.templateKey) && state.templateKey !== NEW_KEY ? state.templateKey : "b:0");
   }
   document.getElementById("rotateVariants").checked = state.rotateVariants !== false;
   updateVariantCount();
@@ -772,7 +772,8 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     await chrome.storage.local.remove("famfitBatch");
     return; // sendToActiveTab already put the reason in the status line
   }
-  statusEl.textContent = `Started. ${contactsToSend.length} of ${loadedContacts.length} loaded contact(s) queued.`;
+  statusEl.textContent = `Started. ${contactsToSend.length} of ${loadedContacts.length} loaded contact(s) queued.` +
+    (isDirty() ? " Using your edited wording for this batch only." : "");
   runStatusEl.textContent = "";
 });
 

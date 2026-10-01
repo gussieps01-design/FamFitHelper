@@ -64,7 +64,7 @@
   test("editing a starter: shows 'not saved', can't overwrite it, needs a name to save a copy", async () => {
     await resetAll();
     await type($("templateText"), $("templateText").value + "\nEXTRA LINE");
-    check($("templateInfo").textContent.includes("not saved"), $("templateInfo").textContent);
+    check($("templateInfo").textContent.includes("this send only"), $("templateInfo").textContent);
     check($("tplSave").style.display === "none", "Save must be hidden for a starter");
     await click("tplSaveAs");
     check(msg().startsWith("Not saved") && msg().includes("name"), msg());
@@ -112,7 +112,7 @@
     const id = (await store(SAVED))[0].id;
     check($("tplSave").disabled, "Save changes should be disabled with nothing changed");
     await type($("templateText"), "Hi {{first_name}}, version TWO");
-    check(!$("tplSave").disabled && $("templateInfo").textContent.includes("not saved"), "dirty state");
+    check(!$("tplSave").disabled && $("templateInfo").textContent.includes("this send only"), "dirty state");
     await click("tplSave");
     const saved = await store(SAVED);
     check(saved.length === 1 && saved[0].id === id && saved[0].text.includes("version TWO"), saved);
@@ -184,34 +184,58 @@
     check($("variantCount").textContent.startsWith("2 versions"), $("variantCount").textContent);
   });
 
-  test("closing and re-opening the popup keeps the template, an unsaved edit, and the saved list", async () => {
+  test("quick edits are for this send only: closing and re-opening the popup reverts them (saved templates stay)", async () => {
     await resetAll();
     await pick("b:2");
+    const original = $("templateText").value;
     await type($("templateText"), "Draft edit {{first_name}}");
     await type($("templateName"), "half typed name");
+    check($("templateInfo").textContent.includes("this send only"), $("templateInfo").textContent);
     await openPopup();
-    check(keyNow() === "b:2", keyNow());
-    check($("templateText").value === "Draft edit {{first_name}}", $("templateText").value);
-    check($("templateName").value === "half typed name", "name draft");
-    check($("templateInfo").textContent.includes("not saved"), "still marked unsaved");
+    check(keyNow() === "b:2" && $("templateText").value === original && $("templateName").value === "" && $("templateInfo").textContent === "", [keyNow(), $("templateText").value]);
+    await type($("templateText"), "Keep this {{first_name}}");
+    await type($("templateName"), "Kept copy");
     await click("tplSaveAs");
     await openPopup();
-    check(keyNow().startsWith("u:") && $("templateText").value === "Draft edit {{first_name}}" && $("templateInfo").textContent === "", [keyNow(), $("templateText").value]);
-    check(names().includes("half typed name"), names());
+    check(keyNow().startsWith("u:") && $("templateText").value === "Keep this {{first_name}}" && $("templateInfo").textContent === "", [keyNow(), $("templateText").value]);
+    await type($("templateText"), "temporary tweak {{first_name}}");
+    await openPopup();
+    check($("templateText").value === "Keep this {{first_name}}", "saved template changed by a temporary edit");
   });
 
-  test("switching away from unsaved edits asks first; 'No' keeps them, 'Yes' discards", async () => {
+  test("clicking a template again (or another one) reverts quick edits without asking; Start uses the edited wording", async () => {
     await resetAll();
-    await type($("templateText"), "my unsaved words {{first_name}}");
-    answers(false);
-    await pick("b:3");
-    check(keyNow() === "b:0" && $("templateSelect").value === "b:0" && $("templateText").value.includes("unsaved words"), [keyNow(), $("templateSelect").value]);
-    answers(true);
-    await pick("b:3");
-    check(keyNow() === "b:3" && !$("templateText").value.includes("unsaved words"), keyNow());
+    const original = $("templateText").value;
+    await type($("templateText"), "my tweak {{first_name}}");
     const before = w.confirmLog.length;
-    await pick("b:4"); // clean switch: no prompt
-    check(w.confirmLog.length === before && keyNow() === "b:4", "prompted on a clean switch");
+    await pick("b:0"); // the same template again
+    check($("templateText").value === original && w.confirmLog.length === before, "re-click did not revert");
+    await type($("templateText"), "another tweak {{first_name}}");
+    await pick("b:3");
+    check(keyNow() === "b:3" && !$("templateText").value.includes("tweak") && w.confirmLog.length === before, keyNow());
+    // the list shows nothing selected while it's open, and snaps back if you click away
+    $("templateSelect").dispatchEvent(new w.Event("focus"));
+    check($("templateSelect").selectedIndex === -1, "list should show nothing selected on focus");
+    $("templateSelect").dispatchEvent(new w.Event("blur"));
+    check($("templateSelect").value === "b:3", $("templateSelect").value);
+    // an edit goes into the batch, but not into storage
+    $("contacts").value = "Test Person\t(555) 123-4567";
+    await click("usePastedBtn");
+    await type($("templateText"), "Hi {{first_name}}, edited for this batch");
+    await click("startBtn"); // no CRM tab in the test page, so the batch is dropped again
+    check(!(await store("famfitBatch")) && !JSON.stringify(await store("famfitPopupState")).includes("edited for this batch"), "edit leaked into storage");
+  });
+
+  test("a message written from scratch asks before being thrown away", async () => {
+    await resetAll();
+    await pick(NEW);
+    await type($("templateText"), "hand written {{first_name}}");
+    answers(false);
+    await pick("b:0");
+    check(keyNow() === "new" && $("templateText").value.includes("hand written"), keyNow());
+    answers(true);
+    await pick("b:0");
+    check(keyNow() === "b:0", keyNow());
   });
 
   test("Undo changes restores the saved/starter text", async () => {
