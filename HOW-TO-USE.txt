@@ -77,8 +77,22 @@ PART 2 - SEND A BATCH OF TEXTS
    copy, "Undo changes" goes back to the last saved text, and "Delete"
    removes it. You can also edit a starter template and click "Save as
    my own template" - the starter itself never changes. "Preview"
-   shows exactly what people will get. Saved templates stay in this
-   Chrome on this computer only.
+   shows exactly what people will get.
+
+   SHARE YOUR TEMPLATES ON THIS COMPUTER: each Chrome profile keeps
+   its own saved templates until you share them. Under the Template
+   list click "Share on this computer...". A page opens:
+     - In the FIRST profile click "Create the shared file...", choose a
+       folder (for example Documents) and Save. Allow editing if Chrome
+       asks.
+     - In every OTHER profile click "Use the existing shared file..."
+       and pick the same FamFitHelper-templates.json.
+   From then on, saving, editing or deleting a template in any of those
+   profiles updates all of them (they catch up when the popup is
+   opened). After Chrome restarts it may ask again - click "Reconnect"
+   under the Template list. If the shared file can't be reached your
+   changes are still saved in that profile, and the popup tells you.
+   Don't edit the file by hand, and keep a backup copy of it.
    If a message has a mistake (like {{firstname}} instead of
    {{first_name}}) it can't be saved or sent until it's fixed.
 

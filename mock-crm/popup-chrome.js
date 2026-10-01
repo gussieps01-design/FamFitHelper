@@ -4,7 +4,9 @@
 // page reload behaves like closing and re-opening the popup.
 (function () {
   // No CRM tab here: popup actions that talk to the page report "open the CRM tab".
-  window.chrome.tabs = { query: async () => [], sendMessage: async () => null };
+  window.openedTabs = [];
+  window.chrome.tabs = { query: async () => [], sendMessage: async () => null, create: async (o) => { window.openedTabs.push(o.url); } };
+  window.chrome.runtime.getURL = (p) => "chrome-extension://test/" + p;
   // Never reach out to GitHub from a test page (the update check).
   window.fetch = () => Promise.reject(new Error("offline (test page)"));
   // Tests answer confirm() dialogs by queueing answers: window.confirmAnswers = [true, false].

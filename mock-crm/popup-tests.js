@@ -233,7 +233,7 @@
     check((await store(SAVED)).length === 1 && keyNow().startsWith("u:"), "deleted despite No");
     answers(true);
     await click("tplDelete");
-    check((await store(SAVED)).length === 0 && keyNow() === "b:0" && !names().includes("Temp"), [await store(SAVED), keyNow()]);
+    check((await store(SAVED)).filter((t) => !t.deleted).length === 0 && keyNow() === "b:0" && !names().includes("Temp"), [await store(SAVED), keyNow()]);
     check(w.confirmLog[w.confirmLog.length - 1].includes('"Temp"'), w.confirmLog[w.confirmLog.length - 1]);
   });
 
@@ -333,6 +333,231 @@
     await click("tplSave");
     await openPopup();
     check(w.famfitSplitVariants($("templateText").value).join("|") === "Hi {{first_name}}, saved text A|Hey {{first_name}}, saved text B", $("templateText").value);
+  });
+
+  // ---- shared file (computer-wide templates) --------------------------------
+  // A fake file handle (what showSaveFilePicker / showOpenFilePicker return)
+  // and two simulated Chrome profiles that each have their own storage.
+  function fakeFile(initial) {
+    const f = {
+      name: "FamFitHelper-templates.json", text: initial || "", perm: "granted", writes: 0, failWrite: false, grantOnRequest: true,
+      queryPermission: async () => f.perm,
+      requestPermission: async () => { if (f.grantOnRequest) f.perm = "granted"; return f.perm; },
+      getFile: async () => ({ size: f.text.length, text: async () => f.text }),
+      createWritable: async () => {
+        let buf = "";
+        return { write: async (s) => { buf += s; }, close: async () => { if (f.failWrite) throw new Error("disk full"); f.text = buf; f.writes++; }, abort: async () => {} };
+      },
+    };
+    return f;
+  }
+  const fileTemplates = (f) => JSON.parse(f.text).templates;
+  const liveNames = (f) => fileTemplates(f).filter((t) => !t.deleted).map((t) => t.name).sort();
+  const STORE_KEY = "famfitMockChromeStorage";
+  const profiles = {};
+  let currentProfile = "A";
+  async function useProfile(name, handle) {
+    profiles[currentProfile] = sessionStorage.getItem(STORE_KEY);
+    currentProfile = name;
+    if (profiles[name]) sessionStorage.setItem(STORE_KEY, profiles[name]); else sessionStorage.removeItem(STORE_KEY);
+    window.fakeHandle = handle;
+    await openPopup();
+  }
+  async function freshShared(initialText) {
+    sessionStorage.clear();
+    for (const k of Object.keys(profiles)) delete profiles[k];
+    currentProfile = "A";
+    const file = fakeFile(initialText);
+    window.fakeHandle = file;
+    await openPopup();
+    return file;
+  }
+  async function saveNew(name, text) {
+    await pick(NEW);
+    await type($("templateText"), text);
+    await type($("templateName"), name);
+    await click("tplSave");
+  }
+
+  test("sharing: with no shared file it says so, and the button opens the setup page", async () => {
+    window.fakeHandle = undefined;
+    await resetAll();
+    check($("sharedLine").textContent.includes("this Chrome profile only"), $("sharedLine").textContent);
+    $("sharedBtn").click(); await wait(60);
+    check(w.openedTabs.length === 1 && w.openedTabs[0].endsWith("shared.html"), w.openedTabs);
+  });
+
+  test("sharing: a save goes into the file; a second profile sees it at open", async () => {
+    const file = await freshShared("");
+    check($("sharedLine").textContent.includes("in sync"), $("sharedLine").textContent);
+    await saveNew("Promo", "Hi {{first_name}}, promo text");
+    check(msg() === 'Saved "Promo" and shared it.', msg());
+    check(liveNames(file).join() === "Promo" && JSON.parse(file.text).app === "FamFitHelper", file.text);
+    await useProfile("B", file);
+    check(names().includes("Promo"), names());
+    await pick("u:" + (await store(SAVED))[0].id);
+    check($("templateText").value === "Hi {{first_name}}, promo text", $("templateText").value);
+  });
+
+  test("sharing: an edit in one profile reaches the other; the newer edit wins", async () => {
+    const file = await freshShared("");
+    await saveNew("Promo", "version 1 {{first_name}}");
+    await useProfile("B", file);
+    await pick("u:" + (await store(SAVED))[0].id);
+    await type($("templateText"), "version 2 from B {{first_name}}");
+    await wait(5);
+    await click("tplSave");
+    await useProfile("A", file);
+    await pick("u:" + (await store(SAVED))[0].id);
+    check($("templateText").value === "version 2 from B {{first_name}}", $("templateText").value);
+    check(fileTemplates(file).length === 1, "duplicate entry in file");
+  });
+
+  test("sharing: a delete in one profile stays deleted (the other profile's old copy doesn't bring it back)", async () => {
+    const file = await freshShared("");
+    await saveNew("Promo", "Hi {{first_name}} one");
+    await saveNew("Keeper", "Hi {{first_name}} keep");
+    await useProfile("B", file);
+    await pick("u:" + (await store(SAVED)).find((t) => t.name === "Promo").id);
+    answers(true);
+    await click("tplDelete");
+    check(!names().includes("Promo") && msg() === 'Deleted "Promo".', [names(), msg()]);
+    await useProfile("A", file); // A still has its own old copy of Promo
+    check(!names().includes("Promo") && names().includes("Keeper"), names());
+    check(liveNames(file).join() === "Keeper" && fileTemplates(file).some((t) => t.deleted), file.text);
+  });
+
+  test("sharing: two different templates with the same name both survive ('(2)' on the newer)", async () => {
+    window.fakeHandle = undefined;
+    sessionStorage.clear();
+    for (const k of Object.keys(profiles)) delete profiles[k];
+    currentProfile = "A";
+    await openPopup();
+    await saveNew("Promo", "A's promo {{first_name}}");   // profile A, not shared yet
+    await wait(5);
+    const file = fakeFile("");
+    await useProfile("B", file);                          // profile B shares first
+    await saveNew("Promo", "B's promo {{first_name}}");
+    await useProfile("A", file);                          // A joins the same file later
+    const all = (await store(SAVED)).filter((t) => !t.deleted);
+    check(all.length === 2 && all.map((t) => t.name).sort().join() === "Promo,Promo (2)", all);
+    check(all.some((t) => t.text.startsWith("A's")) && all.some((t) => t.text.startsWith("B's")), "a text was lost");
+    check(liveNames(file).join() === "Promo,Promo (2)", liveNames(file));
+  });
+
+  test("sharing: needs permission after a restart - saving still works here, Reconnect catches up", async () => {
+    const file = await freshShared("");
+    await saveNew("First", "Hi {{first_name}} first");
+    file.perm = "prompt"; // Chrome forgot the permission
+    await openPopup();
+    check($("sharedLine").textContent.includes("needs your OK") && $("sharedBtn").textContent === "Reconnect", $("sharedLine").textContent);
+    await saveNew("Offline one", "Hi {{first_name}} offline");
+    check(msg().includes("NOT in the shared file yet"), msg());
+    check((await store(SAVED)).length === 2 && !liveNames(file).includes("Offline one"), "local save must work, file untouched");
+    await click("sharedBtn");
+    check($("sharedLine").textContent.includes("in sync") && liveNames(file).join() === "First,Offline one", [$("sharedLine").textContent, liveNames(file)]);
+    check(msg() === "Shared file reconnected.", msg());
+  });
+
+  test("sharing: Reconnect that is refused opens the setup page instead", async () => {
+    const file = await freshShared("");
+    file.perm = "prompt"; file.grantOnRequest = false;
+    await openPopup();
+    await click("sharedBtn");
+    check(w.openedTabs.length === 1 && w.openedTabs[0].endsWith("shared.html"), w.openedTabs);
+  });
+
+  test("sharing: a damaged / foreign / newer file is never overwritten, and saving still works", async () => {
+    for (const bad of ["this is not json", JSON.stringify({ app: "SomethingElse", templates: [] }), JSON.stringify({ app: "FamFitHelper", kind: "templates", version: 99, templates: [] })]) {
+      const file = await freshShared(bad);
+      check($("sharedLine").textContent.startsWith("Shared file problem"), $("sharedLine").textContent);
+      await saveNew("Safe", "Hi {{first_name}} safe");
+      check(msg().includes("NOT in the shared file yet"), msg());
+      check(file.text === bad && file.writes === 0, "file was modified: " + file.text);
+      check((await store(SAVED)).length === 1, "local save lost");
+    }
+  });
+
+  test("sharing: a failed write to the file keeps the local save and says so", async () => {
+    const file = await freshShared("");
+    file.failWrite = true;
+    await saveNew("Local only", "Hi {{first_name}} local");
+    check(msg().includes("NOT in the shared file yet") && (await store(SAVED)).length === 1, msg());
+    check($("sharedLine").textContent.includes("disk full"), $("sharedLine").textContent);
+    file.failWrite = false;
+    await openPopup();
+    check(liveNames(file).join() === "Local only", liveNames(file));
+  });
+
+  test("sharing: a template deleted elsewhere while open: clean -> back to the first starter; typed text -> kept as a new draft", async () => {
+    for (const typed of [false, true]) {
+      const file = await freshShared("");
+      await saveNew("Doomed", "Hi {{first_name}} doomed");
+      const id = (await store(SAVED))[0].id;
+      file.perm = "prompt";
+      await openPopup();
+      await pick("u:" + id);
+      // another profile deletes it
+      const t = fileTemplates(file); const i = t.findIndex((x) => x.id === id);
+      t[i] = { id, name: "", text: "", updatedAt: Date.now() + 1000, deleted: true };
+      file.text = JSON.stringify({ app: "FamFitHelper", kind: "templates", version: 1, updatedAt: Date.now(), templates: t });
+      if (typed) await type($("templateText"), "my unsaved words {{first_name}}");
+      await click("sharedBtn");
+      if (typed) check(keyNow() === "new" && $("templateText").value.includes("my unsaved words"), [keyNow(), $("templateText").value]);
+      else check(keyNow() === "b:0", keyNow());
+      check(!names().includes("Doomed"), names());
+    }
+  });
+
+  test("merge rules (unit): order doesn't matter, newer wins, delete beats older edit, old delete markers expire, junk dropped", async () => {
+    const m = w.famfitMergeTemplates;
+    const now = 1e12, DAY = 86400000, T = now - 1000; // recent timestamps (old delete markers expire)
+    const A = [{ id: "a", name: "One", text: "old", updatedAt: T + 100 }, { id: "b", name: "Two", text: "t", updatedAt: T + 100 }];
+    const B = [{ id: "a", name: "One", text: "new", updatedAt: T + 200 }, { id: "b", name: "", text: "", updatedAt: T + 150, deleted: true }, { id: "c", name: "Three", text: "c", updatedAt: T + 1 }];
+    const r1 = m(A, B, now, []), r2 = m(B, A, now, []);
+    check(JSON.stringify(r1) === JSON.stringify(r2), "order matters");
+    check(r1.find((t) => t.id === "a").text === "new" && r1.find((t) => t.id === "b").deleted === true && r1.some((t) => t.id === "c"), r1);
+    check(JSON.stringify(m(r1, r1, now, [])) === JSON.stringify(r1), "not idempotent");
+    const editedAfterDelete = m([{ id: "b", name: "Two", text: "back", updatedAt: T + 999 }], B, now, []);
+    check(editedAfterDelete.find((t) => t.id === "b").text === "back", "newer edit should beat older delete");
+    const expired = m([{ id: "z", name: "", text: "", updatedAt: now - 91 * DAY, deleted: true }, { id: "y", name: "", text: "", updatedAt: now - 10 * DAY, deleted: true }], [], now, []);
+    check(expired.length === 1 && expired[0].id === "y", expired);
+    check(m([null, { id: 5 }, "x", { id: "ok", name: "N", text: "T" }], undefined, now, []).length === 1, "junk not dropped");
+    const clash = m([{ id: "p", name: "Personal training", text: "x", updatedAt: 5 }], [], now, ["Personal training"]);
+    check(clash[0].name === "Personal training (2)", clash);
+  });
+
+  test("setup page: create the file, join from a second profile, refuse a foreign file, stop sharing", async () => {
+    const file = fakeFile("");
+    window.fakeHandle = file;
+    sessionStorage.clear();
+    await openPopup();
+    await saveNew("Shared one", "Hi {{first_name}} shared");   // file exists, popup saved to it
+    // open the setup page in an iframe
+    const sf = document.createElement("iframe"); sf.style.cssText = "width:560px;height:500px"; document.body.appendChild(sf);
+    const load = async () => { await new Promise((r) => { sf.onload = r; sf.src = "/shared?ts=" + Date.now(); }); await wait(150); return sf.contentWindow; };
+    let sw = await load();
+    check(sw.document.getElementById("status").textContent.includes('Connected to "FamFitHelper-templates.json"'), sw.document.getElementById("status").textContent);
+    // "Create": the picker returns a NEW empty file
+    const created = fakeFile("");
+    window.fakeHandle = null;
+    sw.showSaveFilePicker = async () => created;
+    window.fakeHandle = created; // handle slot (set() replaces it)
+    sw.document.getElementById("createBtn").click(); await wait(300);
+    check(sw.document.getElementById("status").className === "ok" && created.text.includes("Shared one"), [sw.document.getElementById("status").textContent, created.text]);
+    // a foreign file is refused, untouched, and not remembered
+    const foreign = fakeFile(JSON.stringify({ hello: "world" }));
+    window.fakeHandle = created;
+    sw.showOpenFilePicker = async () => [foreign];
+    sw.document.getElementById("openBtn").click(); await wait(300);
+    check(sw.document.getElementById("status").className === "err" && foreign.text === JSON.stringify({ hello: "world" }) && foreign.writes === 0, [sw.document.getElementById("status").textContent, foreign.text]);
+    check(window.fakeHandle === null, "bad file should not be remembered");
+    // stop sharing
+    window.fakeHandle = created;
+    sw.confirmAnswers.push(true);
+    sw.document.getElementById("disconnectBtn").click(); await wait(150);
+    check(window.fakeHandle === null && sw.document.getElementById("status").textContent.includes("Sharing stopped"), sw.document.getElementById("status").textContent);
+    sf.remove();
   });
 
   (async function run() {

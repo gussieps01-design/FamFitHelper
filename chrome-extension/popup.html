@@ -112,6 +112,10 @@
     <label for="templateSelect" style="margin-top:0;">Template (or pick "Write my own")</label>
     <select id="templateSelect"></select>
     <div id="templateHint" class="muted" style="margin:3px 0 0 0;"></div>
+    <div class="row" style="align-items:center;margin-top:4px;">
+      <div id="sharedLine" class="muted" style="margin:0;flex:1;"></div>
+      <div style="flex:0 0 auto;"><button type="button" class="mini" id="sharedBtn">Share on this computer...</button></div>
+    </div>
 
     <div id="templateNameRow" style="display:none;">
       <label for="templateName">Name of your template</label>
@@ -189,6 +193,7 @@
   <div id="runStatus"></div>
 
   <script src="templates.js"></script>
+  <script src="sharedfile.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

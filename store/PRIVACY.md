@@ -14,6 +14,8 @@ Everything is stored **only in your own browser** (Chrome's extension storage on
 - when each phone number was last texted through the extension (for the re-text cooldown; entries older than a year are deleted automatically),
 - a summary of the last run.
 
+If you choose to share your saved templates between Chrome profiles, the extension also reads and writes **one file you pick on your own computer** (message templates only, no customer information). It is never uploaded anywhere.
+
 ## What it sends, and to whom
 - **To the CRM only:** the same requests the CRM's own pages make (searching customers, opening a customer's message window, sending the text you approved or set to auto-send). These go to `crm.healthyimagefitness.com` using your existing login.
 - **To GitHub (no personal data):** the popup checks `api.github.com` for a newer version of the extension. This request contains no customer or user information.

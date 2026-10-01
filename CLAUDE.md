@@ -57,7 +57,8 @@ node --check chrome-extension/content.js    # quick syntax check (no build step,
   - `isCrmUrl()` uses the manifest's match patterns.
 - `templates.js`: `FAMFIT_TEMPLATES` (8 starter templates x 3 versions, split by a line with only `---`), `famfitRenderTemplate` (`{{first_name}} {{last_name}} {{staff}} {{location}}`), and the validators `famfitTemplateProblems` / `famfitNameProblem` (unknown or malformed `{{fields}}` can't be saved or started).
 - Saved templates: `chrome.storage.local.famfitSavedTemplates` = `[{id, name, text}]`. The popup picks templates by key (`b:<n>` starter, `u:<id>` saved, `new`), tracks unsaved edits against a baseline, and verifies every save by reading it back. `content.js` is unchanged: a batch still just carries `templateText`.
-- Popup tests: `http://localhost:4567/popup-tests` (22 checks, drives the real popup in an iframe; `/popup` is the popup alone).
+- Shared templates (computer-wide): `sharedfile.js` (merge, parse/validate, IndexedDB handle, `famfitSyncShared`) + `shared.html`/`shared.js` (setup page: create/pick the JSON file, Sync, Stop sharing). Entries are `{id,name,text,updatedAt}`; deletes are tombstones `{deleted:true}` kept 90 days. The file is a sync layer on top of `chrome.storage.local`: saves always work locally. NOT yet verified in real Chrome (real file pickers / permission prompt after restart) - the user must test it.
+- Popup tests: `http://localhost:4567/popup-tests` (34 checks incl. fake shared file + two simulated profiles; `/popup` and `/shared` are the pages alone, with stubs).
 - **Storage keys:** `famfitBatch`, `famfitPopupState`, `famfitSentLog` (phone -> last-texted ms), `famfitLastRun`, `famfitHeartbeat`, `famfitCrmMaps`, `famfitUpdateCheck`.
 - **Permissions:** only `storage` plus the CRM host. Keep them minimal.
 

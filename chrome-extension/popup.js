@@ -86,7 +86,9 @@ const tplUndoBtn = document.getElementById("tplUndo");
 const tplDeleteBtn = document.getElementById("tplDelete");
 const NEW_KEY = "new";
 
-let savedTemplates = []; // [{ id, name, text }]
+let allSaved = [];       // every saved entry, including delete markers (tombstones)
+let savedTemplates = []; // the live ones: [{ id, name, text, updatedAt }]
+const STARTER_NAMES = FAMFIT_TEMPLATES.map((t) => t.name);
 let currentKey = "b:0";
 let baseline = { name: "", text: "" };
 let tplBusy = false;
@@ -239,13 +241,12 @@ function selectTemplate(key, draft) {
 async function loadSavedTemplates() {
   try {
     const stored = (await chrome.storage.local.get(FAMFIT_SAVED_KEY))[FAMFIT_SAVED_KEY];
-    savedTemplates = (Array.isArray(stored) ? stored : []).filter(
-      (t) => t && typeof t.id === "string" && typeof t.name === "string" && typeof t.text === "string"
-    );
+    allSaved = (Array.isArray(stored) ? stored : []).filter(famfitValidEntry);
   } catch (e) {
-    savedTemplates = [];
+    allSaved = [];
     setTemplateMsg("Couldn't read your saved templates: " + e.message, "err");
   }
+  savedTemplates = allSaved.filter((t) => !t.deleted);
 }
 
 // Write the saved list, then read it back so "Saved" is only ever shown when
@@ -254,8 +255,67 @@ async function persistSaved(next) {
   await chrome.storage.local.set({ [FAMFIT_SAVED_KEY]: next });
   const back = (await chrome.storage.local.get(FAMFIT_SAVED_KEY))[FAMFIT_SAVED_KEY];
   if (JSON.stringify(back) !== JSON.stringify(next)) throw new Error("the browser didn't keep it");
-  savedTemplates = next;
+  allSaved = next;
+  savedTemplates = next.filter((t) => !t.deleted);
 }
+
+// ---- Shared file (every Chrome profile on this computer) -------------------
+// Saved templates are always kept in this profile too; the shared file is
+// merged in at open and after every save/delete. See sharedfile.js.
+const sharedLineEl = document.getElementById("sharedLine");
+const sharedBtn = document.getElementById("sharedBtn");
+let sharedState = { state: "none" };
+
+function renderShared() {
+  const s = sharedState;
+  let text, btn;
+  if (s.state === "ok") { text = `Shared on this computer: ${s.fileName} - in sync.`; btn = "Manage"; }
+  else if (s.state === "needs-permission") { text = `Shared file "${s.fileName}" needs your OK again.`; btn = "Reconnect"; }
+  else if (s.state === "error") { text = "Shared file problem: " + s.error; btn = "Manage"; }
+  else { text = "Saved templates are kept in this Chrome profile only."; btn = "Share on this computer..."; }
+  sharedLineEl.textContent = text;
+  sharedLineEl.style.color = s.state === "error" || s.state === "needs-permission" ? "#B3261E" : "";
+  sharedBtn.textContent = btn;
+}
+
+// Merge with the shared file (if any) and adopt the result locally. Never throws.
+async function syncShared(interactive) {
+  const res = await famfitSyncShared(allSaved, STARTER_NAMES, interactive);
+  sharedState = res;
+  if (res.state === "ok" && JSON.stringify(res.merged) !== JSON.stringify(allSaved)) {
+    try {
+      await persistSaved(res.merged);
+    } catch (e) {
+      sharedState = { state: "error", fileName: res.fileName, error: "couldn't update this profile's copy (" + e.message + ")" };
+    }
+  }
+  renderShared();
+  return sharedState;
+}
+
+// After a sync changed the list: keep the editor consistent with it.
+function reconcileAfterSync() {
+  const dirty = isDirty();
+  if (!keyExists(currentKey)) {
+    // The template was deleted elsewhere. Keep any typed text as a new draft.
+    if (dirty && templateText.value.trim()) selectTemplate(NEW_KEY, { text: templateText.value, name: templateNameEl.value });
+    else selectTemplate("b:0");
+    return;
+  }
+  const msgText = templateMsgEl.textContent, msgClass = templateMsgEl.className;
+  if (dirty) { populateTemplateSelect(); refreshTemplateUI(); return; }
+  selectTemplate(currentKey);
+  setTemplateMsg(msgText, msgClass);
+}
+
+sharedBtn.addEventListener("click", async () => {
+  const openManage = () => chrome.tabs.create({ url: chrome.runtime.getURL("shared.html") });
+  if (sharedState.state === "needs-permission") {
+    const s = await syncShared(true);
+    if (s.state === "ok") { reconcileAfterSync(); setTemplateMsg("Shared file reconnected.", "ok"); return; }
+  }
+  openManage();
+});
 
 async function saveTemplate(asNew) {
   if (tplBusy) return;
@@ -274,18 +334,25 @@ async function saveTemplate(asNew) {
       templateNameEl.focus();
       return;
     }
-    const entry = { id: updateId || famfitNewId(), name, text };
+    const entry = { id: updateId || famfitNewId(), name, text, updatedAt: Date.now() };
     const next = updateId
-      ? savedTemplates.map((t) => (t.id === updateId ? entry : t))
-      : savedTemplates.concat(entry);
+      ? allSaved.map((t) => (t.id === updateId ? entry : t))
+      : allSaved.concat(entry);
     try {
       await persistSaved(next);
     } catch (e) {
       setTemplateMsg("Not saved: " + e.message + ". Your message is still here - try again.", "err");
       return;
     }
+    await syncShared(false); // saved here either way; the shared file is a bonus
+    const finalName = (findSaved(entry.id) || entry).name; // a name clash elsewhere can add "(2)"
     selectTemplate("u:" + entry.id);
-    setTemplateMsg(`Saved "${name}".`, "ok");
+    setTemplateMsg(
+      sharedState.state === "none" ? `Saved "${finalName}".`
+        : sharedState.state === "ok" ? `Saved "${finalName}" and shared it.`
+        : `Saved "${finalName}" in this profile. It's NOT in the shared file yet - see the shared-file line above.`,
+      sharedState.state === "ok" || sharedState.state === "none" ? "ok" : "err"
+    );
     await saveFormState();
   } finally {
     tplBusy = false;
@@ -301,15 +368,22 @@ async function deleteTemplate() {
   tplBusy = true;
   refreshTemplateUI();
   try {
-    await persistSaved(savedTemplates.filter((x) => x.id !== id));
+    // Keep a delete marker (not just remove it) so another profile's copy
+    // doesn't bring it back when the shared file is merged.
+    await persistSaved(allSaved.map((x) => (x.id === id ? { id, name: "", text: "", updatedAt: Date.now(), deleted: true } : x)));
   } catch (e) {
     setTemplateMsg("Not deleted: " + e.message, "err");
     return;
   } finally {
     tplBusy = false;
   }
+  await syncShared(false);
   selectTemplate("b:0");
-  setTemplateMsg(`Deleted "${t.name}".`, "ok");
+  setTemplateMsg(
+    sharedState.state === "none" || sharedState.state === "ok" ? `Deleted "${t.name}".`
+      : `Deleted "${t.name}" in this profile. It's still in the shared file until that reconnects.`,
+    sharedState.state === "none" || sharedState.state === "ok" ? "ok" : "err"
+  );
   await saveFormState();
 }
 
@@ -453,6 +527,7 @@ function collectFormState() {
     templateKey: currentKey,
     templateName: templateNameEl.value,
     templateText: templateText.value,
+    templateDirty: isDirty(), // only a real unsaved edit is restored as a draft
     templatesVersion: 3, // 3 = template picked by key, saved templates, unsaved drafts
     rotateVariants: document.getElementById("rotateVariants").checked,
     staff: document.getElementById("staff").value,
@@ -490,9 +565,20 @@ async function restoreFormState() {
   // Templates (v3 state): same template, plus any unsaved edit. State from an
   // older popup (picked by number from a different list) just starts fresh.
   if (state.templatesVersion === 3 && typeof state.templateKey === "string") {
-    const key = keyExists(state.templateKey) ? state.templateKey : NEW_KEY;
-    // A saved template that no longer exists keeps its text as a draft.
-    selectTemplate(key, { text: state.templateText, name: state.templateName });
+    if (keyExists(state.templateKey)) {
+      // A clean template is re-read from storage (another profile may have
+      // changed it); only a genuine unsaved edit comes back as a draft.
+      // (A name typed for a copy of a starter is kept too.)
+      selectTemplate(
+        state.templateKey,
+        state.templateDirty ? { text: state.templateText, name: state.templateName }
+          : savedIdOf(state.templateKey) === null && state.templateName ? { name: state.templateName }
+          : undefined
+      );
+    } else {
+      // A saved template that no longer exists keeps its text as a draft.
+      selectTemplate(NEW_KEY, { text: state.templateText, name: state.templateName });
+    }
   }
   document.getElementById("rotateVariants").checked = state.rotateVariants !== false;
   updateVariantCount();
@@ -565,6 +651,7 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
 document.getElementById("textCount").addEventListener("input", saveFormState);
 (async () => {
   await loadSavedTemplates();
+  await syncShared(false); // pick up templates other Chrome profiles saved
   populateTemplateSelect();
   let restored = null;
   try {
