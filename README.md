@@ -1,9 +1,6 @@
 # FamFitHelper
 
-Tools for texting gym customers from the Healthy Image Fitness CRM using reusable message templates.
-
-- **Chrome extension** (`chrome-extension/`, recommended): texts a whole filtered list of customers straight from the CRM. You either click Send for each person, or turn on Auto-send and let it run through the list by itself.
-- **Desktop app** (`app.py`, older): builds one message at a time and copies it to your clipboard to paste into the CRM. It never sends anything itself.
+A Chrome extension for texting gym customers from the Healthy Image Fitness CRM using reusable message templates. It texts a whole filtered list of customers straight from the CRM: you either click Send for each person, or turn on Auto-send and let it run through the list by itself.
 
 **New here? Read [HOW-TO-USE.txt](HOW-TO-USE.txt)** for step-by-step install and use instructions.
 
@@ -17,7 +14,6 @@ What it does:
 - **Re-text cooldown.** Choose how many days must pass before the same person can be texted again (default 7, 0 = off). It's checked at Load and again right before each text.
 - **Fills in each message for you.** It opens each customer's SMS box and fills in the template with `{{first_name}}`, `{{last_name}}`, `{{staff}}` and `{{location}}`, with optional fallbacks for Staff and Location.
 - **Rotating pitches.** Each template has several versions of the same pitch (the 20 starter templates have 3 each). With rotation on, each contact gets the next version, so people don't all get identical wording.
-- **Update notice.** The popup tells you when a newer version is on the releases page.
 - **Two ways to send:**
   - *Manual:* review each message, then click Send (or press Ctrl+Enter). It moves on to the next person as soon as the CRM confirms the send.
   - *Auto-send:* opt-in, and confirmed every time you start. It sends through the whole list unattended, with a configurable pause between texts.
@@ -27,30 +23,12 @@ What it does:
   - Only one tab ever runs a batch.
   - It never sends a message with a blank `{{field}}`.
 - **Remembers your work.** Filters, template and loaded contacts survive closing the popup. "Text how many" limits a batch. After a run, the popup shows how many were sent and who was skipped and why.
+- **Update notice.** The popup tells you when a newer version is on the releases page.
 
-## Desktop app
+**Stable baseline:** v1.4.2 is the known-good version that future versions build on (git tag `extension-stable-1.4.2`, branch `stable`).
 
-Grab `FamFitHelper.exe` from the [v1.1.0 release](../../releases/tag/v1.1.0) and double-click it. No install and no Python required.
+## Desktop app (archived)
 
-- Reusable templates with `{{first_name}}`, `{{staff}}`, `{{location}}` and `{{appointment_date}}`.
-- Clipboard auto-detect for names and phone numbers, auto-copy of the finished message, and an optional auto-paste hotkey (never clicks Send).
-- Cycle through a pasted list, or log in to the CRM to pull a filtered customer list.
-- Re-text cooldown log. Templates can live in a shared folder (e.g. OneDrive) so several computers stay in sync.
-
-### Running from source
-
-Requires Python 3.10+.
-
-```bash
-pip install requests
-python app.py
-```
-
-### Building the exe yourself
-
-```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed --name FamFitHelper app.py
-```
-
-The built exe will be in `dist/`.
+The older Windows desktop app (`app.py` / `FamFitHelper.exe`) is retired; the Chrome extension replaces it. It's kept for reference:
+- The last code that includes it is tagged [`desktop-app-final`](../../tree/desktop-app-final).
+- The built `FamFitHelper.exe` is still in the [v1.1.0 release](../../releases/tag/v1.1.0).

@@ -9,7 +9,7 @@
 
 ## What this is
 - Chrome extension (`chrome-extension\`, v1.4.2) that pre-fills SMS templates for batches of contacts in the live production CRM at `https://crm.healthyimagefitness.com` (real gym customers), and can optionally auto-send them.
-- A desktop app (`app.py`) also exists; it was out of scope for this work and has known, unfixed bugs (see bottom).
+- The older desktop app (`app.py`) was **archived on 2026-10-01** (user decision: the extension replaces it). It's removed from `master`; the last code with it is tag `desktop-app-final`, and the exe is in release `v1.1.0`. It had known, unfixed bugs (see bottom) - don't revive it without fixing those.
 - Repo: https://github.com/gussieps01-design/FamFitHelper. Extension work landed via PR #1 (`extension-v1.1-open-by-id`).
 
 ## How the extension works now
@@ -42,4 +42,4 @@
 ## Known gaps
 - Click Send, CRM rejects it, then close the box -> counted as sent (rare now that no-phone contacts are excluded).
 - Chrome still slows timers (pacing, 20s confirm) in hidden tabs; keep the CRM tab visible.
-- Desktop app (`app.py`), untouched: CRM worker errors leave the UI stuck (`lambda: ...(e)` NameError), "Signed up within" never matches (date format), Copy & Next marks contacts done without copying when placeholders are blank, corrupt JSON files crash startup.
+- Desktop app (`app.py`, archived - tag `desktop-app-final`), never fixed: CRM worker errors leave the UI stuck (`lambda: ...(e)` NameError), "Signed up within" never matches (date format), Copy & Next marks contacts done without copying when placeholders are blank, corrupt JSON files crash startup.
