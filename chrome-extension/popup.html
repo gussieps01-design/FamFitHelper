@@ -17,34 +17,37 @@
   legend { font-size: 12px; font-weight: bold; padding: 0 4px; }
   button { margin-top: 8px; width: 100%; padding: 8px; border: none; border-radius: 3px; background: #C6552B; color: #fff; font-weight: bold; cursor: pointer; }
   button.secondary { background: #fff; color: #2B2724; border: 1px solid #C9C0B2; }
-  #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  #status, #runStatus { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
+  #runStatus { max-height: 160px; overflow-y: auto; }
   details summary { font-size: 12px; cursor: pointer; margin-top: 8px; color: #8A8378; }
 </style>
 </head>
 <body>
   <h3>FamFitHelper CRM Assist</h3>
-  <div class="muted">Never clicks Send. Pre-fills each message; you click Send (or Ctrl+Enter) yourself, then it advances automatically.</div>
+  <div id="updateNotice" style="display:none;background:#C6552B;color:#fff;padding:8px;border-radius:4px;font-size:12px;margin-bottom:8px;"></div>
+  <div class="muted">By default, never clicks Send - you click Send (or Ctrl+Enter) yourself, then it advances automatically. The "Auto-send" checkbox below turns that off and sends unattended instead.</div>
 
   <fieldset>
     <legend>Load from CRM (live)</legend>
+    <button id="refreshOptionsBtn" type="button" class="secondary">Refresh dropdown options from CRM</button>
     <div class="row">
       <div>
-        <label>Status</label>
-        <input id="fStatus" placeholder="Trial">
+        <label>Status (ctrl/cmd-click for multiple)</label>
+        <select id="fStatus" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
       <div>
-        <label>Priority</label>
-        <input id="fPriority" placeholder="Warm">
+        <label>Priority (ctrl/cmd-click for multiple)</label>
+        <select id="fPriority" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
     </div>
     <div class="row">
       <div>
-        <label>Location</label>
-        <input id="fLocation">
+        <label>Location (ctrl/cmd-click for multiple)</label>
+        <select id="fLocation" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
       <div>
-        <label>Staff</label>
-        <input id="fStaff">
+        <label>Staff (ctrl/cmd-click for multiple)</label>
+        <select id="fStaff" multiple size="5"><option value="">Any (click to clear all)</option></select>
       </div>
     </div>
     <div class="row">
@@ -64,7 +67,7 @@
       </div>
       <div>
         <label>Search up to N pages</label>
-        <input id="fMaxPages" type="number" value="5">
+        <input id="fMaxPages" type="number" value="20" title="Each page is 100 CRM matches">
       </div>
     </div>
     <button id="loadBtn">Load matching contacts</button>
@@ -80,24 +83,54 @@
   <h4>Loaded contacts</h4>
   <div id="loadedSummary" class="muted">None loaded yet.</div>
 
+  <div class="row" style="align-items:flex-end;">
+    <div style="flex:0 0 80px;">
+      <label>Text how many</label>
+      <input id="textCount" type="number" min="1" placeholder="all">
+    </div>
+    <div style="flex:1;padding-bottom:6px;">
+      <span id="textCountOf" class="muted">of 0 loaded, to text</span>
+    </div>
+  </div>
+
+  <div class="row" style="align-items:center;margin-top:6px;">
+    <div style="flex:0 0 70px;"><input id="cooldownDays" type="number" min="0" value="7"></div>
+    <div class="muted" style="margin:0;">days - skip anyone texted from this browser within this many days (0 = off)</div>
+  </div>
+
   <label>Template</label>
   <select id="templateSelect"></select>
-  <textarea id="templateText"></textarea>
+  <textarea id="templateText" style="height:140px;"></textarea>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+    <input type="checkbox" id="rotateVariants" style="width:auto;" checked>
+    <span>Rotate between versions (so people don't all get the same wording)</span>
+  </label>
+  <div id="variantCount" class="muted" style="margin-bottom:0;"></div>
 
   <div class="row">
     <div>
       <label>Staff (fallback if not in CRM data)</label>
-      <input id="staff" placeholder="Michael Lara">
+      <select id="staff"><option value="">(use contact's own staff)</option></select>
     </div>
     <div>
       <label>Location (fallback)</label>
-      <input id="location" placeholder="Family Fitness Fruitport Twp">
+      <select id="location"><option value="">(use contact's own location)</option></select>
     </div>
+  </div>
+
+  <label style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+    <input type="checkbox" id="autoSend" style="width:auto;">
+    <span>Auto-send each message automatically (skips manual click/review per contact)</span>
+  </label>
+  <div class="row" style="align-items:center;">
+    <div style="flex:0 0 70px;"><input id="delaySec" type="number" min="1" value="5"></div>
+    <div class="muted" style="margin:0;">seconds between auto-sends. Keep the CRM tab visible (its own window is fine) - Chrome slows hidden tabs.</div>
   </div>
 
   <button id="startBtn">Start batch (pre-fill first contact)</button>
   <button id="stopBtn" class="secondary">Stop</button>
   <div id="status"></div>
+  <div id="runStatus"></div>
 
   <script src="templates.js"></script>
   <script src="popup.js"></script>

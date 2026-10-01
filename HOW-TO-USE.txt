@@ -1,0 +1,134 @@
+FAMFITHELPER - HOW TO USE (Chrome extension)
+=============================================
+
+What it does: texts a list of gym customers from the CRM, one after
+another, using a message template. You can click Send yourself for each
+one, or let it send automatically.
+
+You need: Google Chrome, and a login for the CRM
+(https://crm.healthyimagefitness.com).
+
+
+---------------------------------------------
+PART 1 - INSTALL (one time per computer)
+---------------------------------------------
+
+1. Get the files:
+   - Go to https://github.com/gussieps01-design/FamFitHelper/releases/latest
+   - Under "Assets", click the file named
+     FamFitHelper-Chrome-Extension-....zip to download it.
+   - Unzip it somewhere you'll keep it (for example Documents).
+     Don't delete this folder later - Chrome runs the extension from it.
+
+2. In Chrome, type this in the address bar and press Enter:
+      chrome://extensions
+
+3. Turn on "Developer mode" (switch in the top-right corner).
+
+4. Click "Load unpacked" and choose the "chrome-extension" folder
+   inside the folder you unzipped (the one that has manifest.json in it).
+
+5. Click the puzzle-piece icon at the top right of Chrome and pin
+   "FamFitHelper CRM Assist" so its icon is always visible.
+
+
+---------------------------------------------
+PART 2 - SEND A BATCH OF TEXTS
+---------------------------------------------
+
+1. Open the CRM in Chrome and log in. Go to the Customers page.
+   Leave this tab open the whole time.
+
+2. Click the FamFitHelper icon. Wait a few seconds while the filter
+   lists fill in (a small box on the CRM page shows progress).
+
+3. Pick who to text. Use the Status / Priority / Location / Staff
+   lists and the number boxes (Idle days, Signed up within).
+   - Hold Ctrl and click to pick more than one item in a list.
+   - Click "Any" at the top of a list to clear it.
+   Then click "Load matching contacts".
+   It tells you how many it found. People marked Dead, unsubscribed,
+   with a bad phone, or with no phone are left out automatically.
+
+4. (Optional) "Text how many": type a number to only text the first
+   that many. Leave it empty to text everyone loaded.
+
+   "Days" box (default 7): anyone texted from this computer within
+   that many days is skipped, so nobody gets texted too often.
+   Change it to any number of days, or 0 to turn it off.
+
+5. Pick a message template. Check the text - {{first_name}}, {{staff}}
+   and {{location}} get filled in for each person. If some people
+   might have no staff or location, pick a fallback in the two boxes
+   below the template.
+
+   Each template has several VERSIONS of the same pitch, separated by
+   a line with just --- on it. With "Rotate between versions" checked
+   (the default), each person gets the next version, so people don't
+   all get the exact same wording. You can edit them, add more (put
+   --- on its own line between them) or delete some. Uncheck "Rotate"
+   to send everyone the first version.
+
+6. Choose how to send:
+
+   A) YOU CLICK SEND (safest - leave "Auto-send" unchecked)
+      - Click "Start batch". The first person's message box opens with
+        the message filled in. Their name and phone show in the corner.
+      - Read it, then click Send in the CRM (or press Ctrl+Enter).
+      - It opens the next person automatically. Repeat.
+
+   B) AUTO-SEND (sends by itself)
+      - Check "Auto-send". Set "seconds between auto-sends" (5 is fine).
+      - Click "Start batch" and confirm.
+      - Put the CRM tab in its own window and leave it visible (not
+        minimized). Chrome slows down hidden tabs.
+      - It texts everyone on the list by itself.
+
+7. When it's done, the box on the CRM page says "Done: X sent,
+   Y skipped". Open the popup to see who was skipped and why.
+
+
+---------------------------------------------
+PART 3 - GOOD TO KNOW
+---------------------------------------------
+
+- STOP: click the icon, then "Stop". That ENDS the batch for good.
+  Clicking "Start batch" after Stop starts the loaded list over from
+  the top - people already texted are skipped by the "Days" setting
+  (unless you set it to 0).
+- To text a DIFFERENT list: click "Stop", then Load and Start.
+- If a batch pauses by itself (see below), "Start batch" picks up
+  where it left off - it never re-texts people already sent.
+- If a message box is closed without sending, click "Start batch"
+  to bring that person back up.
+- If it says "Stopped: 3 contacts in a row failed": you were probably
+  logged out of the CRM. Log back in, then click "Start batch".
+- If the page reloads during auto-send, it continues by itself after
+  about 15 seconds.
+- If the popup says "refresh the CRM tab": press F5 on the CRM tab
+  and try again.
+- Only text people during normal hours, and start with a small batch
+  (about 20) the first time.
+
+
+---------------------------------------------
+UPDATING TO A NEWER VERSION
+---------------------------------------------
+
+The extension can't install updates by itself, but it checks for them:
+when a newer version is out, the popup shows an orange "Update
+available" box with a download link. Then:
+
+1. Download the newest ZIP from the releases page (same link as above).
+2. Go to chrome://extensions. On FamFitHelper CRM Assist, click
+   "Remove".
+3. Click "Load unpacked" and choose the NEW "chrome-extension" folder
+   (the one from the ZIP you just downloaded).
+4. Check the version: chrome://extensions and the popup's title both
+   show it (for example "v1.3.3"). The box on the CRM page shows it too.
+5. Refresh the CRM tab (F5), then click "Load matching contacts" again.
+
+(Removing the extension also clears its settings and the "Days" record
+of who was texted. If you'd rather keep them: copy the new files OVER
+the old folder that Chrome is already using, then click the reload
+arrow on the extension instead of Remove / Load unpacked.)
