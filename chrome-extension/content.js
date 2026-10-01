@@ -207,7 +207,11 @@
   // open modal covers the page; a closed one is display:none (an empty
   // element with no height doesn't count).
   function isWindowShown(el) {
-    return !!el && el.offsetHeight > 0 && el.getClientRects().length > 0;
+    if (!el || getComputedStyle(el).display === "none") return false;
+    // Bootstrap marks a shown window with "in"; otherwise it must take up
+    // space (an empty, zero-height element doesn't count). Not relying on
+    // size alone keeps this right even when the page has no size at all.
+    return el.classList.contains("in") || el.offsetHeight > 0;
   }
 
   function openMessageWindows() {
@@ -218,23 +222,40 @@
     return openMessageWindows().length > 0;
   }
 
-  // Close any open message window (click its X; Escape as a fallback) and
-  // wait until it's gone. True when no message window is showing.
+  // A message window is open OR still animating open/closed. Bootstrap adds
+  // its dark backdrop as soon as a window starts opening and removes it only
+  // after the window has finished closing. This matters in a background
+  // tab: Chrome slows the CRM's own animation timers there, so a window can
+  // be "opening" for a while without being on screen yet - and clicking the
+  // open link then (it's a toggle) would close it again.
+  function messageWindowBusy() {
+    return messageWindowOpen() || !!document.querySelector(".modal-backdrop");
+  }
+
+  // Close any message window and wait until it's completely gone, including
+  // one still opening or closing. Only a fully open window ("in") is closed
+  // (its X; Escape as a fallback); an animating one is left to finish.
+  // True when no message window is open or animating.
   async function closeMessageWindow() {
-    if (!messageWindowOpen()) return true;
-    const open = openMessageWindows();
-    for (const m of open) {
-      const x = m.querySelector('[data-dismiss="modal"]');
-      if (x) x.click();
-      else m.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true }));
-    }
+    if (!messageWindowBusy()) return true;
+    let closing = false;
     try {
-      await waitFor(() => !messageWindowOpen(), 5000);
+      await waitFor(() => {
+        if (!messageWindowBusy()) return true;
+        if (!closing) {
+          const fullyOpen = openMessageWindows().filter((m) => m.classList.contains("in"));
+          for (const m of fullyOpen) {
+            const x = m.querySelector('[data-dismiss="modal"]');
+            if (x) x.click();
+            else m.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true }));
+            closing = true;
+          }
+        }
+        return false;
+      }, 10000);
     } catch (e) {
       return false;
     }
-    // Let the fade-out and backdrop finish before opening the next one.
-    try { await waitFor(() => !document.querySelector(".modal-backdrop"), 1500); } catch (e) { /* harmless */ }
     await sleep(300);
     return true;
   }

@@ -1,10 +1,14 @@
 {
   "manifest_version": 3,
   "name": "FamFitHelper CRM Assist",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Texts a filtered list of Healthy Image Fitness CRM customers from message templates - click Send yourself, or opt in to Auto-send.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://crm.healthyimagefitness.com/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://crm.healthyimagefitness.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -24,8 +28,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://crm.healthyimagefitness.com/*"],
-      "js": ["templates.js", "content.js"],
+      "matches": [
+        "https://crm.healthyimagefitness.com/*"
+      ],
+      "js": [
+        "templates.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

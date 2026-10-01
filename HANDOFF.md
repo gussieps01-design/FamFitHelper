@@ -1,7 +1,7 @@
 # FamFitHelper - Handoff (2026-10-01)
 
 ## Status in one line
-The Chrome extension v1.4.2 works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. **v1.5.0** (all known gaps fixed) is built and mock-tested on branch `fix-gaps` / PR, published as a pre-release, and **waiting for the user's live test**. The desktop app is archived.
+The Chrome extension v1.4.2 works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. **v1.5.1** (all known gaps fixed, plus a fix the new mock CRM found) is built and tested against the realistic mock on branch `fix-gaps` / PR #4, published as a pre-release, and **waiting for the user's live test**. The desktop app is archived.
 
 ## STABLE BASELINE: extension v1.4.2
 **Build every future version on top of it.**
@@ -34,11 +34,11 @@ The Chrome extension v1.4.2 works on the live CRM (user-confirmed: auto-send "Do
 ## Working on it - lessons learned
 - **Mock tests are not enough.** v1.2-v1.4.1 all passed a local mock CRM but failed live. The breakthrough was recording the real CRM (passive MutationObserver + event logger in a Claude-group Chrome tab while the user clicked). Do that first when something fails live.
 - Claude is blocked from opening message windows or sending on the live CRM (real customers); live checks need the user. Read-only GETs to `/customers_grid.json` are fine.
-- The mock harness used for tests lived in a session scratchpad and is **not** in the repo. Rebuild one if needed; include the toggle, refresh-after-send and duplicate-id behaviour above.
+- **Test against `mock-crm/` first** (in the repo since v1.5.1): `node mock-crm/server.js`, then http://localhost:4567/customers?harness=1 runs the real content.js end to end against a mock built from the recording (real jQuery 1.12 / Bootstrap 3 / jquery_ujs, the CRM's own Send code, the grid's filter quirks, message history). The control panel `/mock` switches refresh/close-after-send, rejects, latency, logged out, history down; `?slow=<ms>` slows window animations; `?content=/mock/<file>.js` tests another copy of content.js side by side. `node mock-crm/make-test-extension.js` builds a copy that works ONLY on the mock, to try the real popup. See `mock-crm/README.md`. On its first run the mock caught a v1.5.0 bug (opening the next contact while the CRM window was still animating) - fixed in v1.5.1.
 - After reloading the unpacked extension, refresh the CRM tab (old content scripts go dead). Updating = Remove + Load unpacked the new folder (unzipping elsewhere does NOT update Chrome's copy); the popup title shows the version actually loaded.
 - Releases: zip of `chrome-extension/` + `HOW-TO-USE.txt` via `git archive`, published with `gh release create extension-vX.Y.Z --latest` (gh is installed at `C:\Program Files\GitHub CLI\gh.exe`, signed in). Bump `manifest.json` version each release.
 
-## Known gaps -> fixed in v1.5.0 (branch `fix-gaps`, pre-release `extension-v1.5.0`)
+## Known gaps -> fixed in v1.5.x (branch `fix-gaps`, pre-release `extension-v1.5.1`)
 All five gaps listed for v1.4.2 are fixed in v1.5.0. **v1.5.0 still needs a live test by the user** before it becomes the new baseline - until then v1.4.2 stays the stable baseline and v1.5.0 is published as a GitHub *pre-release* (the popup's update notice ignores pre-releases).
 - **Rejected send then closed box counted as sent** -> "sent" now requires the CRM's green `#flash_notice` banner ("Message is sended", only added on success) or, failing that, the message appearing in the customer's CRM history (`/customers/<id>/customer_messages.json?message_type=sms`). Not in history = reported "NOT sent" (not counted for the cooldown). History unreadable = "not confirmed" and counted for the cooldown (no double texts).
 - **Hidden tabs slowed timers** -> `background.js` service worker provides wake-ups over a `"famfit-timer"` port (`later()` / `every()` in content.js race it against the page's own setTimeout; requests at least every 20s keep the worker alive; reconnects if the worker restarts).

@@ -118,9 +118,22 @@ function cooldownDaysValue() {
   return n === null || isNaN(n) ? 7 : Math.max(0, n);
 }
 
+// Is this a page the extension works on? Uses the manifest's content-script
+// match patterns, so a test copy that also covers the mock CRM works too.
+function isCrmUrl(url) {
+  try {
+    const patterns = chrome.runtime.getManifest().content_scripts.flatMap((c) => c.matches);
+    return patterns.some((p) =>
+      new RegExp("^" + p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$").test(url)
+    );
+  } catch (e) {
+    return url.includes("crm.healthyimagefitness.com");
+  }
+}
+
 async function sendToActiveTab(message) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.url || !tab.url.includes("crm.healthyimagefitness.com")) {
+  if (!tab || !tab.url || !isCrmUrl(tab.url)) {
     statusEl.textContent = "Open the CRM's customer list tab first, then try again.";
     return null;
   }

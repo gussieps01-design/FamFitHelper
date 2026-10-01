@@ -4,3 +4,6 @@ build/
 dist/
 *.spec
 sent_log.json
+
+# generated test copy of the extension (node mock-crm/make-test-extension.js)
+mock-crm/test-extension/
