@@ -64,6 +64,45 @@ PART 2 - SEND A BATCH OF TEXTS
    might have no staff or location, pick a fallback in the two boxes
    below the template.
 
+   The starter templates are: Personal training, Holiday notice,
+   Relocation, Membership expired win-back, Former members, Free pass /
+   trial follow-up, Missed guests and Re-engagement (cold lead).
+
+   YOUR OWN MESSAGES: pick "Write my own message..." at the bottom of
+   the Template list and type it. Use the small "Insert" buttons to
+   drop in the person's name, your name or the location. Type a name
+   for it and click "Save template" to keep it - it then shows up
+   under "My saved templates". To change one later, pick it, edit the
+   text (or its name) and click "Save changes". "Save as new" makes a
+   copy, "Put back saved wording" undoes your edits, and "Delete"
+   removes it.
+
+   QUICK EDITS FOR ONE SEND: you can type in the message box to add or
+   cut words before you start a batch (for example a different day or
+   a special). That change is only for this send. It is NOT kept: close
+   the popup, or click the template in the list again, and the saved
+   wording is back. Click "Save changes" / "Save as my own template"
+   only if you want to keep an edit. You can also edit a starter template and click "Save as
+   my own template" - the starter itself never changes. "Preview"
+   shows exactly what people will get.
+
+   SHARE YOUR TEMPLATES ON THIS COMPUTER: each Chrome profile keeps
+   its own saved templates until you share them. Under the Template
+   list click "Share on this computer...". A page opens:
+     - In the FIRST profile click "Create the shared file...", choose a
+       folder (for example Documents) and Save. Allow editing if Chrome
+       asks.
+     - In every OTHER profile click "Use the existing shared file..."
+       and pick the same FamFitHelper-templates.json.
+   From then on, saving, editing or deleting a template in any of those
+   profiles updates all of them (they catch up when the popup is
+   opened). After Chrome restarts it may ask again - click "Reconnect"
+   under the Template list. If the shared file can't be reached your
+   changes are still saved in that profile, and the popup tells you.
+   Don't edit the file by hand, and keep a backup copy of it.
+   If a message has a mistake (like {{firstname}} instead of
+   {{first_name}}) it can't be saved or sent until it's fixed.
+
    Each template has several VERSIONS of the same pitch, separated by
    a line with just --- on it. With "Rotate between versions" checked
    (the default), each person gets the next version, so people don't

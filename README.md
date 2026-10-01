@@ -13,7 +13,7 @@ What it does:
 - **Leaves out people who shouldn't be texted.** Contacts marked Dead, unsubscribed, with a bounced phone or no phone are skipped automatically, and a phone number shared by several customers is only texted once.
 - **Re-text cooldown.** Choose how many days must pass before the same person can be texted again (default 7, 0 = off). Right before each text it checks the CRM's own message history, so texts from other computers or typed into the CRM count too.
 - **Fills in each message for you.** It opens each customer's SMS box and fills in the template with `{{first_name}}`, `{{last_name}}`, `{{staff}}` and `{{location}}`, with optional fallbacks for Staff and Location.
-- **Rotating pitches.** Each template has several versions of the same pitch (the 20 starter templates have 3 each). With rotation on, each contact gets the next version, so people don't all get identical wording.
+- **Rotating pitches.** Each template has several versions of the same pitch (the 8 starter templates have 3 each). With rotation on, each contact gets the next version, so people don't all get identical wording. You can also write, save, edit and delete your own templates.
 - **Two ways to send:**
   - *Manual:* review each message, then click Send (or press Ctrl+Enter). It moves on to the next person as soon as the CRM confirms the send.
   - *Auto-send:* opt-in, and confirmed every time you start. It sends through the whole list unattended, with a configurable pause between texts, only during the sending hours you choose (default 9 AM - 8 PM).
@@ -26,7 +26,7 @@ What it does:
 - **Remembers your work.** Filters, template and loaded contacts survive closing the popup. "Text how many" limits a batch. After a run, the popup shows how many were sent and who was skipped and why.
 - **Update notice.** The popup tells you when a newer version is on the releases page.
 
-**Stable baseline:** v1.4.2 is the known-good version (git tag `extension-stable-1.4.2`, branch `stable`).
+**Stable baseline:** v1.6.0 is the known-good version (git tag `extension-stable-1.6.0`, branch `stable`).
 
 **Automatic updates:** to have Chrome update the extension by itself, publish it (unlisted) on the Chrome Web Store - see [store/PUBLISHING.md](store/PUBLISHING.md).
 

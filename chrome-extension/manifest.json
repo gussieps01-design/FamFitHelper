@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FamFitHelper CRM Assist",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Texts a filtered list of Healthy Image Fitness CRM customers from message templates - click Send yourself, or opt in to Auto-send.",
   "permissions": [
     "storage"

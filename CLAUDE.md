@@ -10,23 +10,18 @@ A Chrome extension (`chrome-extension/`, Manifest V3, loaded unpacked) that text
 - **Live tests are the user's job.** Ask for small batches (3-5 people) and the full red badge text.
 - **Test every extension change against the mock CRM first** (below). Many versions passed hand-made mocks and failed live; the mock in `mock-crm/` is built from a recording of the real CRM.
 - **Don't merge or mark a release stable until the user confirms it works on the live CRM.** Publish new versions as GitHub **pre-releases** first.
-- **Keep the stable baseline safe.** v1.4.2 is the last user-confirmed version (tag `extension-stable-1.4.2`, branch `stable`, release `extension-v1.4.2` marked Latest).
+- **Keep the stable baseline safe.** v1.6.0 is the last user-confirmed version (tag `extension-stable-1.6.0`, branch `stable`, release `extension-v1.6.0` marked Latest). Older fallback: tag `extension-stable-1.4.2`.
 - Commit on a branch and open a PR. Don't push to `master` directly.
 
 ## Current state (update this section when it changes)
-- **v1.5.1 is in testing:** branch `fix-gaps`, PR #4 (open, NOT merged), pre-release `extension-v1.5.1`. It fixes all known gaps:
-  - CRM-confirmed sends
-  - background-tab timers via `background.js`
-  - the re-text cooldown also checks CRM history
-  - auto-send sending hours
-  - Chrome Web Store prep in `store/`
-  - waiting for the CRM window to finish animating
-- **Waiting on:** the user's live test of v1.5.1.
-- **If it passes:**
-  - Merge PR #4.
-  - Make `extension-v1.5.1` a full, Latest release titled "(stable baseline)".
-  - Add tag `extension-stable-1.5.1`, move branch `stable`, and update this section, HANDOFF.md and memory.
-- **If it fails:** reproduce it in the mock, fix it, add a mock test, and release v1.5.2 as a pre-release.
+- **v1.6.0 is the stable baseline** (user confirmed it on the live CRM on 2026-10-01): tag `extension-stable-1.6.0`, branch `stable`, release `extension-v1.6.0` (Latest). PRs #4 and #5 are merged. It contains:
+  - CRM-confirmed sends, background-tab timers, CRM-history cooldown, auto-send sending hours, wait for the CRM window animation (v1.5.x)
+  - 8 starter templates written in staff's real texting style (modelled on a read-only sample of the CRM's sent messages)
+  - your own saved templates (save / rename / copy / delete); quick edits are per-send only and revert on close or re-click
+  - messages with an unknown or malformed {{field}} can't be saved or started
+  - computer-wide sharing of saved templates through one JSON file (`sharedfile.js`, `shared.html`)
+- **Next work:** start from `extension-stable-1.6.0` (or `stable`). A new version goes out as a pre-release, then the user tests it live.
+- **If a live test fails:** reproduce it in the mock, fix it, add a mock test, and release the next version as a pre-release.
 - **Optional (user's decision):** publish on the Chrome Web Store (unlisted). It needs the user's own $5 developer account; see `store/PUBLISHING.md`.
 
 ## Commands
@@ -55,7 +50,10 @@ node --check chrome-extension/content.js    # quick syntax check (no build step,
   - Start resumes a stored batch; Stop ends it.
   - The update notice uses the GitHub releases API and ignores pre-releases.
   - `isCrmUrl()` uses the manifest's match patterns.
-- `templates.js`: `FAMFIT_TEMPLATES` (20 templates x 3 versions, split by a line with only `---`) and `famfitRenderTemplate` (`{{first_name}} {{last_name}} {{staff}} {{location}}`).
+- `templates.js`: `FAMFIT_TEMPLATES` (8 starter templates x 3 versions, split by a line with only `---`), `famfitRenderTemplate` (`{{first_name}} {{last_name}} {{staff}} {{location}}`), and the validators `famfitTemplateProblems` / `famfitNameProblem` (unknown or malformed `{{fields}}` can't be saved or started).
+- Saved templates: `chrome.storage.local.famfitSavedTemplates` = `[{id, name, text}]`. The popup picks templates by key (`b:<n>` starter, `u:<id>` saved, `new`), tracks unsaved edits against a baseline, and verifies every save by reading it back. `content.js` is unchanged: a batch still just carries `templateText`.
+- Shared templates (computer-wide): `sharedfile.js` (merge, parse/validate, IndexedDB handle, `famfitSyncShared`) + `shared.html`/`shared.js` (setup page: create/pick the JSON file, Sync, Stop sharing). Entries are `{id,name,text,updatedAt}`; deletes are tombstones `{deleted:true}` kept 90 days. The file is a sync layer on top of `chrome.storage.local`: saves always work locally. NOT yet verified in real Chrome (real file pickers / permission prompt after restart) - the user must test it.
+- Popup tests: `http://localhost:4567/popup-tests` (35 checks incl. fake shared file + two simulated profiles; `/popup` and `/shared` are the pages alone, with stubs).
 - **Storage keys:** `famfitBatch`, `famfitPopupState`, `famfitSentLog` (phone -> last-texted ms), `famfitLastRun`, `famfitHeartbeat`, `famfitCrmMaps`, `famfitUpdateCheck`.
 - **Permissions:** only `storage` plus the CRM host. Keep them minimal.
 

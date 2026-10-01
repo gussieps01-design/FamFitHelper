@@ -365,6 +365,26 @@ const server = http.createServer(async (req, res) => {
     // --- test/control endpoints ---
     if (p === "/" ) return send(res, 302, "", "text/plain", { Location: "/customers" });
     if (p === "/mock") return send(res, 200, controlPanel());
+    // Automated tests for the popup's templates (drives /popup in an iframe).
+    if (p === "/popup-tests") {
+      return send(res, 200, '<!doctype html><meta charset="utf-8"><title>popup tests</title><body style="font:13px sans-serif"><h3>Popup template tests</h3><div id="out"></div><script src="/mock/popup-tests.js"></script>');
+    }
+    // The REAL popup page (popup.html + popup.js) with stubbed chrome.* APIs.
+    if (p === "/popup") {
+      const html = fs.readFileSync(path.join(EXT_DIR, "popup.html"), "utf8")
+        .replace('<script src="templates.js">', '<script src="/mock/harness-chrome.js"></script>\n  <script src="/mock/popup-chrome.js"></script>\n  <script src="/ext/templates.js">')
+        .replace('<script src="sharedfile.js"></script>', '<script src="/ext/sharedfile.js"></script>\n  <script src="/mock/popup-shared-stub.js"></script>')
+        .replace('<script src="popup.js">', '<script src="/ext/popup.js">');
+      return send(res, 200, html);
+    }
+    // The shared-templates setup page (shared.html), same stubs.
+    if (p === "/shared") {
+      const html = fs.readFileSync(path.join(EXT_DIR, "shared.html"), "utf8")
+        .replace('<script src="templates.js"></script>', '<script src="/mock/harness-chrome.js"></script>\n  <script src="/mock/popup-chrome.js"></script>\n  <script src="/ext/templates.js"></script>')
+        .replace('<script src="sharedfile.js"></script>', '<script src="/ext/sharedfile.js"></script>\n  <script src="/mock/popup-shared-stub.js"></script>')
+        .replace('<script src="shared.js">', '<script src="/ext/shared.js">');
+      return send(res, 200, html);
+    }
     if (p === "/mock/settings" && req.method === "POST") {
       settings = { ...settings, ...JSON.parse((await readBody(req)) || "{}") };
       return json(res, settings);
