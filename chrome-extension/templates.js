@@ -3,111 +3,55 @@
 // wording. In the popup the versions are shown in one box, separated by a
 // line containing only ---.
 // Placeholders supported here: {{first_name}}, {{last_name}}, {{staff}}, {{location}}.
+// `hint` is shown under the template picker: who this one is meant for.
 const FAMFIT_TEMPLATES = [
-  { name: "Trial check-in", variants: [
-    "Hey {{first_name}}, this is {{staff}} from {{location}}! Just checking in to see how your trial is going so far. Let me know if you have any questions or want to book a time to come back in!",
-    "Hi {{first_name}}, {{staff}} here at {{location}}. How are you liking your trial so far? If you have any questions or want to set up another visit, just let me know!",
-    "Hey {{first_name}}! It's {{staff}} with {{location}}. Wanted to see how the trial's treating you - anything I can help with, or want to lock in a time to come back?",
+  { name: "Personal training", hint: "Members or trials who might want a trainer.", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}. Would a personal training session help you reach your goals faster? I'd be happy to set one up for you - just let me know!",
+    "Hey {{first_name}}, {{staff}} at {{location}} here. Our trainers can build a plan around your goals and keep you on track. Want me to book you a session?",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. If you want to see results faster, a session with one of our trainers can really help. Want me to find you a time?",
   ] },
-  { name: "Missed call follow-up", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}} - sorry I missed your call! What can I help you with? Feel free to call/text back anytime.",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Sorry I missed you! What can I do for you? Text or call back whenever works.",
-    "Hi {{first_name}}! It's {{staff}} from {{location}} - just saw I missed your call. How can I help? Reply here or give me a call anytime.",
+  { name: "Holiday notice", hint: "Everyone. Add the actual hours by hand if you want to include them.", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}! Just a heads up that our hours are a little different for the holiday. Reply here if you have any questions about the schedule!",
+    "Hey {{first_name}}, {{staff}} at {{location}} here. Quick note - we have special hours for the holiday. Text me if you'd like the details. Happy holidays!",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. We're running a holiday schedule, so our hours will look a bit different. Let me know if you want the details. Enjoy the holiday!",
   ] },
-  { name: "Appointment reminder", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}} confirming your upcoming appointment. Reply YES to confirm or let me know if you need to reschedule!",
-    "Hey {{first_name}}, {{staff}} at {{location}} here - just a reminder about your upcoming appointment. Reply YES to confirm, or let me know if another time works better!",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. Checking that we're still good for your appointment - reply YES to confirm or tell me if you need to move it.",
+  { name: "Relocation", hint: "Members who are moving or not local (try Priority = Not Local).", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}. I heard you might be moving out of the area - I'd love to help sort out your membership. Let me know what works for you!",
+    "Hey {{first_name}}, {{staff}} at {{location}} here. If you're relocating, I can go over your membership options with you so there are no surprises. Just reply whenever you're ready.",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. Are you moving away? I'm happy to help with your membership and make the move easy. Text me anytime.",
   ] },
-  { name: "Re-engagement (cold lead)", variants: [
-    "Hey {{first_name}}, it's {{staff}} from {{location}}. It's been a bit since we last connected - we'd love to have you back in! Let me know if you're still interested and I can get you set up.",
-    "Hi {{first_name}}, {{staff}} here from {{location}}. Haven't heard from you in a while - still thinking about getting started? I'd be happy to help you get set up whenever you're ready.",
-    "Hey {{first_name}}! It's {{staff}} at {{location}}. Just circling back - if you're still interested in coming in, let me know and I'll get everything ready for you.",
+  { name: "Membership expired win-back", hint: "Members whose membership just lapsed.", variants: [
+    "Hey {{first_name}}, it's {{staff}} from {{location}}. I noticed your membership lapsed and we'd love to have you back! Want to go over options? No pressure at all.",
+    "Hi {{first_name}}, {{staff}} here at {{location}}. We miss seeing you! Your membership expired - if you'd like to come back, I can walk you through your options.",
+    "Hey {{first_name}}! It's {{staff}} from {{location}}. I saw your membership ended and wanted to reach out. We'd really love to have you back - want to chat about options?",
   ] },
-  { name: "Welcome / new member", variants: [
-    "Welcome to {{location}}, {{first_name}}! This is {{staff}} - excited to have you as a member. Let me know if you ever have questions, and see you at the gym!",
-    "Hey {{first_name}}, welcome to the {{location}} family! I'm {{staff}} - reach out anytime you have questions. Glad to have you with us!",
-    "Hi {{first_name}}! {{staff}} from {{location}} here - so glad you joined! If there's anything you need as you get started, just text me. See you soon!",
+  { name: "Former members", hint: "Former Member status: people who left a while ago.", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}. It's been a while since we've seen you and we'd love to welcome you back. Let me know if you'd like to hear what's new!",
+    "Hey {{first_name}}, {{staff}} at {{location}} here. A lot has been going on at the gym since you left and we'd love to have you back. Want me to fill you in?",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. We haven't forgotten about you! If you're thinking about getting back into a routine, I'd be glad to help you restart.",
   ] },
-  { name: "No-show follow-up", variants: [
-    "Hey {{first_name}}, this is {{staff}} from {{location}} - we missed you at your appointment! No worries at all, just let me know a better time and I'll get you rebooked.",
-    "Hi {{first_name}}, {{staff}} at {{location}} here. Looks like we missed each other today - totally fine! When's a better time? I'll get you rescheduled.",
-    "Hey {{first_name}}! It's {{staff}} from {{location}}. Sorry we didn't get to see you - life happens! Let me know what day works and I'll set you back up.",
+  { name: "Free pass / trial follow-up", hint: "Trial status: people who got a free pass or trial.", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}! Just checking in on your free trial. Come in anytime and I'll show you around. What day works for you?",
+    "Hey {{first_name}}, {{staff}} here at {{location}}. How's your free pass going? If you haven't used it yet, stop in whenever and I'll give you a tour!",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. Wanted to make sure you got your free pass and see if you have any questions. Come by any day and I'll get you started.",
   ] },
-  { name: "Free trial pass follow-up", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}! Wanted to make sure your free trial pass came through okay - come in anytime and I'll show you around. Any day works!",
-    "Hey {{first_name}}, {{staff}} here at {{location}}. Did your free trial pass come through alright? Stop in whenever and I'll give you a tour!",
-    "Hi {{first_name}}! It's {{staff}} from {{location}} - just making sure you got your free pass. Come by any day and I'll get you started.",
+  { name: "Missed guests", hint: "Guest status: people who visited as a guest but didn't sign up.", variants: [
+    "Hi {{first_name}}, this is {{staff}} from {{location}}. Thanks for coming in as a guest! I'd love to hear what you thought and answer any questions about getting started.",
+    "Hey {{first_name}}, {{staff}} at {{location}} here. It was great having you in as a guest. Do you have any questions, or want to set up another visit?",
+    "Hi {{first_name}}! It's {{staff}} from {{location}}. Thanks for stopping by! If you're still thinking about joining, I'd be happy to go over options and help you get started.",
   ] },
-  { name: "Post-first-workout check-in", variants: [
-    "Hey {{first_name}}, {{staff}} here from {{location}} - how'd your first workout go? Let me know if you're feeling sore or have any questions, happy to help!",
-    "Hi {{first_name}}, it's {{staff}} at {{location}}. How was that first workout? Any soreness or questions, just let me know!",
-    "Hey {{first_name}}! {{staff}} from {{location}} checking in - how are you feeling after your first session? I'm here if you need anything.",
-  ] },
-  { name: "Membership renewal reminder", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}. Just a heads up that your membership is coming up for renewal - let me know if you'd like to go over your options anytime!",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Your membership renewal is coming up soon - happy to walk through your options whenever works for you.",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. Quick heads up that your renewal is coming up - want to go over your options? Just let me know.",
-  ] },
-  { name: "Membership expired win-back", variants: [
-    "Hey {{first_name}}, it's {{staff}} from {{location}}. Noticed your membership lapsed - we'd love to have you back! Let me know if you want to talk through options, no pressure at all.",
-    "Hi {{first_name}}, {{staff}} here at {{location}}. We miss seeing you! Your membership lapsed - if you'd like to come back, I can go over options with you. No pressure.",
-    "Hey {{first_name}}! It's {{staff}} from {{location}}. Saw your membership ended - we'd really love to have you back. Want to chat about options? Totally up to you.",
-  ] },
-  { name: "Referral thank-you", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}} - thank you so much for referring a friend! We really appreciate it. Let me know if there's ever anything you need.",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Thanks a ton for sending a friend our way - it means a lot! Let me know if you ever need anything.",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. Just wanted to say thank you for the referral - we really appreciate you! Reach out anytime.",
-  ] },
-  { name: "Birthday message", variants: [
-    "Happy birthday, {{first_name}}! This is {{staff}} from {{location}} wishing you a great one. Come celebrate with a workout on us if you're free this week!",
-    "Happy birthday {{first_name}}! {{staff}} and everyone at {{location}} hope you have an awesome day. Stop in this week for a birthday workout on us!",
-    "Hey {{first_name}}, happy birthday from {{staff}} at {{location}}! Hope it's a great one - come celebrate with a workout on us this week!",
-  ] },
-  { name: "Billing / payment reminder", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}. Looks like there was an issue processing your last payment - could you give us a call or stop by when you get a chance? Thanks!",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Your last payment didn't go through - when you get a minute, could you call or stop by so we can fix it? Thanks!",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. We had trouble processing your last payment - could you reach out or swing by when it's convenient? Thank you!",
-  ] },
-  { name: "Collections outreach (friendly)", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}. Reaching out about your account balance - totally understand things come up. Let me know what works for you and we'll get it sorted out.",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Wanted to touch base about the balance on your account - no stress, just let me know what works and we'll figure it out together.",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. Following up on your account balance - we know things happen. Reply when you can and we'll find something that works for you.",
-  ] },
-  { name: "Insurance paperwork follow-up", variants: [
-    "Hey {{first_name}}, this is {{staff}} from {{location}}. Just following up on the insurance paperwork for your membership - let me know if you have any questions or need help getting it submitted!",
-    "Hi {{first_name}}, {{staff}} at {{location}} here. Checking in on your insurance paperwork - need any help getting it submitted? Just let me know.",
-    "Hey {{first_name}}! It's {{staff}} from {{location}}. Wanted to see how the insurance paperwork is coming along - happy to help with any questions.",
-  ] },
-  { name: "Relocating / not local follow-up", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}. Heard you might be moving out of the area - wanted to check in on your membership. Happy to help figure out next steps whenever you're ready.",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. I heard you might be relocating - want to go over what that means for your membership? Just let me know when works.",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. If you're moving away, I'd be glad to help sort out your membership - reach out whenever you're ready.",
-  ] },
-  { name: "Holiday hours notice", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}! Just a heads up that our hours are a little different for the holiday - let us know if you have any questions about the schedule.",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Quick heads up - our hours are changing a bit for the holiday. Any questions about the schedule, just ask!",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. Just letting you know we have special holiday hours - reach out if you want the details.",
-  ] },
-  { name: "New class or program announcement", variants: [
-    "Hey {{first_name}}, {{staff}} here from {{location}} - we just added a new class we think you'd love! Let me know if you want the schedule or want to try it out.",
-    "Hi {{first_name}}, it's {{staff}} at {{location}}. We've got a brand new class you might really enjoy - want the schedule or to give it a try?",
-    "Hey {{first_name}}! {{staff}} from {{location}} here - something new just launched and I thought of you. Want the details or a spot in the next class?",
-  ] },
-  { name: "Long time no see check-in", variants: [
-    "Hey {{first_name}}, this is {{staff}} from {{location}} - haven't seen you in a bit! Just checking in to see how you're doing and if there's anything we can help with.",
-    "Hi {{first_name}}, {{staff}} at {{location}} here. It's been a little while - how are you doing? Let me know if there's anything we can do for you.",
-    "Hey {{first_name}}! It's {{staff}} from {{location}}. We've missed seeing you around - hope all is well! Anything I can help with to get you back in?",
-  ] },
-  { name: "Personal training offer", variants: [
-    "Hi {{first_name}}, this is {{staff}} from {{location}}. Thought you might be interested in a personal training session to help hit your goals faster - want me to set one up for you?",
-    "Hey {{first_name}}, {{staff}} at {{location}} here. Would a personal training session help with your goals? I'd be happy to set one up for you!",
-    "Hi {{first_name}}! It's {{staff}} from {{location}}. If you want to hit your goals faster, a session with one of our trainers could really help - want me to book one?",
+  { name: "Re-engagement (cold lead)", hint: "Leads who went quiet (try Priority = Cold).", variants: [
+    "Hey {{first_name}}, it's {{staff}} from {{location}}. It's been a bit since we last connected. Are you still interested in getting started? I'd be happy to get you set up.",
+    "Hi {{first_name}}, {{staff}} here from {{location}}. Haven't heard from you in a while - still thinking about getting started? Let me know and I'll help whenever you're ready.",
+    "Hey {{first_name}}! It's {{staff}} at {{location}}. Just circling back. If you're still interested in coming in, reply here and I'll get everything ready for you.",
   ] },
 ];
 
 // Line that separates versions of a message in the template box.
 const FAMFIT_VARIANT_SEPARATOR = "---";
+
+// The only {{placeholders}} the extension fills in.
+const FAMFIT_FIELDS = ["first_name", "last_name", "staff", "location"];
 
 // All versions of a template, as shown/edited in the popup's template box.
 function famfitTemplateText(template) {
@@ -124,4 +68,53 @@ function famfitSplitVariants(text) {
 
 function famfitRenderTemplate(text, vars) {
   return text.replace(/\{\{(\w+)\}\}/g, (m, key) => (vars[key] !== undefined && vars[key] !== "" ? vars[key] : m));
+}
+
+// Problems that would put wrong text in front of a customer. Returns a list of
+// plain-language messages; empty means the text is fine to save and send.
+//  - a {{placeholder}} the extension doesn't know (typo like {{firstname}})
+//  - braces that aren't a clean {{name}} (e.g. {first_name} or {{ first_name }})
+//  - no message text at all
+function famfitTemplateProblems(text) {
+  const problems = [];
+  if (!famfitSplitVariants(text).length) {
+    problems.push("The message is empty.");
+    return problems;
+  }
+  const clean = /\{\{(\w+)\}\}/g;
+  const unknown = [];
+  let m;
+  while ((m = clean.exec(text))) {
+    if (!FAMFIT_FIELDS.includes(m[1]) && !unknown.includes(m[0])) unknown.push(m[0]);
+  }
+  if (unknown.length) {
+    problems.push(`${unknown.join(", ")} isn't a field I can fill in. Use only ${FAMFIT_FIELDS.map((f) => `{{${f}}}`).join(", ")}.`);
+  }
+  // Whatever braces are left once the clean placeholders are removed.
+  if (/[{}]/.test(text.replace(clean, ""))) {
+    problems.push("There is a stray { or } in the message. Placeholders must look exactly like {{first_name}} (no spaces).");
+  }
+  return problems;
+}
+
+// ---- Saved (custom) templates -------------------------------------------
+// Stored in chrome.storage.local under FAMFIT_SAVED_KEY as
+// [{ id, name, text }]. Starter templates above are never changed.
+const FAMFIT_SAVED_KEY = "famfitSavedTemplates";
+const FAMFIT_NAME_MAX = 60;
+
+// Returns an error string, or "" if `name` is OK to use. `exceptId` lets a
+// template keep its own name when it is re-saved.
+function famfitNameProblem(name, saved, exceptId) {
+  const n = (name || "").trim();
+  if (!n) return "Give the template a name first.";
+  if (n.length > FAMFIT_NAME_MAX) return `Keep the name under ${FAMFIT_NAME_MAX} characters.`;
+  const lower = n.toLowerCase();
+  if (FAMFIT_TEMPLATES.some((t) => t.name.toLowerCase() === lower)) return "That name is used by a starter template. Pick a different name.";
+  if ((saved || []).some((t) => t.id !== exceptId && t.name.toLowerCase() === lower)) return "You already have a saved template with that name.";
+  return "";
+}
+
+function famfitNewId() {
+  return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }

@@ -55,7 +55,9 @@ node --check chrome-extension/content.js    # quick syntax check (no build step,
   - Start resumes a stored batch; Stop ends it.
   - The update notice uses the GitHub releases API and ignores pre-releases.
   - `isCrmUrl()` uses the manifest's match patterns.
-- `templates.js`: `FAMFIT_TEMPLATES` (20 templates x 3 versions, split by a line with only `---`) and `famfitRenderTemplate` (`{{first_name}} {{last_name}} {{staff}} {{location}}`).
+- `templates.js`: `FAMFIT_TEMPLATES` (8 starter templates x 3 versions, split by a line with only `---`), `famfitRenderTemplate` (`{{first_name}} {{last_name}} {{staff}} {{location}}`), and the validators `famfitTemplateProblems` / `famfitNameProblem` (unknown or malformed `{{fields}}` can't be saved or started).
+- Saved templates: `chrome.storage.local.famfitSavedTemplates` = `[{id, name, text}]`. The popup picks templates by key (`b:<n>` starter, `u:<id>` saved, `new`), tracks unsaved edits against a baseline, and verifies every save by reading it back. `content.js` is unchanged: a batch still just carries `templateText`.
+- Popup tests: `http://localhost:4567/popup-tests` (22 checks, drives the real popup in an iframe; `/popup` is the popup alone).
 - **Storage keys:** `famfitBatch`, `famfitPopupState`, `famfitSentLog` (phone -> last-texted ms), `famfitLastRun`, `famfitHeartbeat`, `famfitCrmMaps`, `famfitUpdateCheck`.
 - **Permissions:** only `storage` plus the CRM host. Keep them minimal.
 

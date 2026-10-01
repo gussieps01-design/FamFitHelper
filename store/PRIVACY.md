@@ -9,7 +9,7 @@ FamFitHelper CRM Assist is a Chrome extension used by Healthy Image Fitness staf
 
 ## What it stores, and where
 Everything is stored **only in your own browser** (Chrome's extension storage on your computer):
-- your filter and template settings,
+- your filter settings and the message templates you save,
 - the contacts you loaded for a batch, and the progress of that batch,
 - when each phone number was last texted through the extension (for the re-text cooldown; entries older than a year are deleted automatically),
 - a summary of the last run.

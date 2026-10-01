@@ -67,34 +67,293 @@ function updateTextCountLabel() {
   textCountOfEl.textContent = `of ${loadedContacts ? loadedContacts.length : 0} loaded, to text`;
 }
 
-FAMFIT_TEMPLATES.forEach((t, i) => {
-  const opt = document.createElement("option");
-  opt.value = i;
-  opt.textContent = t.name;
-  templateSelect.appendChild(opt);
-});
+// ---- Templates -------------------------------------------------------------
+// A template is picked by key: "b:<n>" = starter template n (never changed),
+// "u:<id>" = one the user saved, "new" = a message being written from scratch.
+// `baseline` is what the current template looks like when saved/unedited, so
+// we can tell when there are unsaved changes.
+const templateNameEl = document.getElementById("templateName");
+const templateNameRow = document.getElementById("templateNameRow");
+const templateHintEl = document.getElementById("templateHint");
+const templateInfoEl = document.getElementById("templateInfo");
+const templateProblemsEl = document.getElementById("templateProblems");
+const templateMsgEl = document.getElementById("templateMsg");
+const previewListEl = document.getElementById("previewList");
 const variantCountEl = document.getElementById("variantCount");
+const tplSaveBtn = document.getElementById("tplSave");
+const tplSaveAsBtn = document.getElementById("tplSaveAs");
+const tplUndoBtn = document.getElementById("tplUndo");
+const tplDeleteBtn = document.getElementById("tplDelete");
+const NEW_KEY = "new";
+
+let savedTemplates = []; // [{ id, name, text }]
+let currentKey = "b:0";
+let baseline = { name: "", text: "" };
+let tplBusy = false;
+let stateReady = false; // don't write popup state until the old one is restored
+
+function builtinIndexOf(key) {
+  const m = /^b:(\d+)$/.exec(key);
+  return m && FAMFIT_TEMPLATES[Number(m[1])] ? Number(m[1]) : -1;
+}
+function savedIdOf(key) { return key.startsWith("u:") ? key.slice(2) : null; }
+function findSaved(id) { return savedTemplates.find((t) => t.id === id) || null; }
+function keyExists(key) {
+  return key === NEW_KEY || builtinIndexOf(key) >= 0 || (savedIdOf(key) !== null && !!findSaved(savedIdOf(key)));
+}
+function baselineFor(key) {
+  const bi = builtinIndexOf(key);
+  if (bi >= 0) return { name: "", text: famfitTemplateText(FAMFIT_TEMPLATES[bi]) };
+  const s = savedIdOf(key) !== null ? findSaved(savedIdOf(key)) : null;
+  return s ? { name: s.name, text: s.text } : { name: "", text: "" };
+}
+// Unsaved changes: the message text differs from the saved/starter text, or
+// (for a saved template) it was renamed.
+function isDirty() {
+  if (templateText.value !== baseline.text) return true;
+  return savedIdOf(currentKey) !== null && templateNameEl.value.trim() !== baseline.name;
+}
+
+function setTemplateMsg(text, kind) {
+  templateMsgEl.textContent = text || "";
+  templateMsgEl.className = kind || "";
+}
+
+function populateTemplateSelect() {
+  templateSelect.innerHTML = "";
+  const starters = document.createElement("optgroup");
+  starters.label = "Starter templates";
+  FAMFIT_TEMPLATES.forEach((t, i) => {
+    const opt = document.createElement("option");
+    opt.value = "b:" + i;
+    opt.textContent = t.name;
+    starters.appendChild(opt);
+  });
+  templateSelect.appendChild(starters);
+  if (savedTemplates.length) {
+    const mine = document.createElement("optgroup");
+    mine.label = "My saved templates";
+    savedTemplates
+      .slice()
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+      .forEach((t) => {
+        const opt = document.createElement("option");
+        opt.value = "u:" + t.id;
+        opt.textContent = t.name;
+        mine.appendChild(opt);
+      });
+    templateSelect.appendChild(mine);
+  }
+  const own = document.createElement("option");
+  own.value = NEW_KEY;
+  own.textContent = "Write my own message...";
+  templateSelect.appendChild(own);
+  templateSelect.value = currentKey;
+}
+
+function sampleVars() {
+  return {
+    first_name: "Jamie",
+    last_name: "Rivera",
+    staff: document.getElementById("staff").value || "Alex",
+    location: document.getElementById("location").value || "Family Fitness",
+  };
+}
+
 function updateVariantCount() {
   const n = famfitSplitVariants(templateText.value).length;
   const rotate = document.getElementById("rotateVariants").checked;
-  variantCountEl.textContent = n <= 1
-    ? "1 version. To rotate wording, add more versions with --- on its own line between them."
-    : rotate
-      ? `${n} versions - rotating: each contact gets the next one. (--- on its own line separates versions.)`
-      : `${n} versions - rotation is OFF, everyone gets the first version.`;
+  variantCountEl.textContent = n === 0
+    ? "No message yet."
+    : n === 1
+      ? "1 version. To rotate wording, add more versions with --- on its own line between them."
+      : rotate
+        ? `${n} versions - rotating: each contact gets the next one. (--- on its own line separates versions.)`
+        : `${n} versions - rotation is OFF, everyone gets the first version.`;
 }
+
+function updatePreview() {
+  previewListEl.textContent = "";
+  const vars = sampleVars();
+  famfitSplitVariants(templateText.value).forEach((v, i, all) => {
+    const div = document.createElement("div");
+    div.className = "pv";
+    const rendered = famfitRenderTemplate(v, vars);
+    div.textContent = rendered;
+    const small = document.createElement("small");
+    const len = rendered.length;
+    small.textContent = `${all.length > 1 ? `Version ${i + 1} - ` : ""}${len} characters` +
+      (len > 160 ? ` (long - may send as ${Math.ceil(len / 153)} text segments)` : "");
+    div.appendChild(small);
+    previewListEl.appendChild(div);
+  });
+  if (!previewListEl.childNodes.length) previewListEl.textContent = "Nothing to preview yet.";
+}
+
+// Re-draw everything that depends on the current template / its edits.
+function refreshTemplateUI() {
+  const bi = builtinIndexOf(currentKey);
+  const isSaved = savedIdOf(currentKey) !== null;
+  const isNew = currentKey === NEW_KEY;
+  const dirty = isDirty();
+  const hasText = templateText.value.trim() !== "";
+
+  templateHintEl.textContent = bi >= 0
+    ? FAMFIT_TEMPLATES[bi].hint + " Edit freely - the starter itself is never changed."
+    : isSaved ? "Your saved template."
+    : "Type your own message, then give it a name and click Save to keep it.";
+  templateNameRow.style.display = "block";
+  templateNameEl.placeholder = bi >= 0 ? "Name it to save your own copy" : "e.g. Spring promo";
+
+  tplSaveBtn.style.display = bi >= 0 ? "none" : "";
+  tplSaveBtn.textContent = isSaved ? "Save changes" : "Save template";
+  tplSaveBtn.disabled = tplBusy || (isSaved && !dirty);
+  tplSaveAsBtn.style.display = isNew ? "none" : "";
+  tplSaveAsBtn.textContent = bi >= 0 ? "Save as my own template" : "Save as new";
+  tplSaveAsBtn.disabled = tplBusy;
+  tplUndoBtn.textContent = isNew ? "Clear" : "Undo changes";
+  tplUndoBtn.disabled = tplBusy || (isNew ? !hasText && !templateNameEl.value : !dirty);
+  tplDeleteBtn.style.display = isSaved ? "" : "none";
+  tplDeleteBtn.disabled = tplBusy;
+
+  const problems = hasText ? famfitTemplateProblems(templateText.value) : [];
+  templateProblemsEl.style.display = problems.length ? "block" : "none";
+  templateProblemsEl.textContent = problems.join(" ");
+
+  templateInfoEl.textContent = dirty && (bi >= 0 || isSaved || hasText) ? "Edited - not saved." : "";
+  updateVariantCount();
+  updatePreview();
+}
+
+// Switch to a template. `draft` restores an unsaved edit (after reopening).
+function selectTemplate(key, draft) {
+  currentKey = keyExists(key) ? key : "b:0";
+  baseline = baselineFor(currentKey);
+  templateText.value = draft && typeof draft.text === "string" ? draft.text : baseline.text;
+  templateNameEl.value = draft && typeof draft.name === "string" ? draft.name : baseline.name;
+  populateTemplateSelect();
+  setTemplateMsg("");
+  refreshTemplateUI();
+}
+
+async function loadSavedTemplates() {
+  try {
+    const stored = (await chrome.storage.local.get(FAMFIT_SAVED_KEY))[FAMFIT_SAVED_KEY];
+    savedTemplates = (Array.isArray(stored) ? stored : []).filter(
+      (t) => t && typeof t.id === "string" && typeof t.name === "string" && typeof t.text === "string"
+    );
+  } catch (e) {
+    savedTemplates = [];
+    setTemplateMsg("Couldn't read your saved templates: " + e.message, "err");
+  }
+}
+
+// Write the saved list, then read it back so "Saved" is only ever shown when
+// it really is in storage.
+async function persistSaved(next) {
+  await chrome.storage.local.set({ [FAMFIT_SAVED_KEY]: next });
+  const back = (await chrome.storage.local.get(FAMFIT_SAVED_KEY))[FAMFIT_SAVED_KEY];
+  if (JSON.stringify(back) !== JSON.stringify(next)) throw new Error("the browser didn't keep it");
+  savedTemplates = next;
+}
+
+async function saveTemplate(asNew) {
+  if (tplBusy) return;
+  tplBusy = true;
+  refreshTemplateUI();
+  try {
+    const text = templateText.value.trim();
+    const problems = famfitTemplateProblems(text);
+    if (problems.length) { setTemplateMsg("Not saved. " + problems[0], "err"); return; }
+    const existingId = savedIdOf(currentKey);
+    const updateId = !asNew && existingId !== null && findSaved(existingId) ? existingId : null;
+    const name = templateNameEl.value.trim();
+    const nameProblem = famfitNameProblem(name, savedTemplates, updateId);
+    if (nameProblem) {
+      setTemplateMsg("Not saved. " + (asNew && existingId !== null && name === baseline.name ? "Type a new name for the copy first." : nameProblem), "err");
+      templateNameEl.focus();
+      return;
+    }
+    const entry = { id: updateId || famfitNewId(), name, text };
+    const next = updateId
+      ? savedTemplates.map((t) => (t.id === updateId ? entry : t))
+      : savedTemplates.concat(entry);
+    try {
+      await persistSaved(next);
+    } catch (e) {
+      setTemplateMsg("Not saved: " + e.message + ". Your message is still here - try again.", "err");
+      return;
+    }
+    selectTemplate("u:" + entry.id);
+    setTemplateMsg(`Saved "${name}".`, "ok");
+    await saveFormState();
+  } finally {
+    tplBusy = false;
+    refreshTemplateUI();
+  }
+}
+
+async function deleteTemplate() {
+  const id = savedIdOf(currentKey);
+  const t = id !== null ? findSaved(id) : null;
+  if (!t || tplBusy) return;
+  if (!confirm(`Delete "${t.name}"?\n\nThis can't be undone.`)) return;
+  tplBusy = true;
+  refreshTemplateUI();
+  try {
+    await persistSaved(savedTemplates.filter((x) => x.id !== id));
+  } catch (e) {
+    setTemplateMsg("Not deleted: " + e.message, "err");
+    return;
+  } finally {
+    tplBusy = false;
+  }
+  selectTemplate("b:0");
+  setTemplateMsg(`Deleted "${t.name}".`, "ok");
+  await saveFormState();
+}
+
+templateSelect.addEventListener("change", async () => {
+  const wanted = templateSelect.value;
+  if (wanted === currentKey) return;
+  if (isDirty() && templateText.value.trim() && !confirm("You have unsaved changes to this message. Switch anyway and lose them?")) {
+    templateSelect.value = currentKey;
+    return;
+  }
+  selectTemplate(wanted);
+  await saveFormState();
+});
+templateText.addEventListener("input", () => { setTemplateMsg(""); refreshTemplateUI(); saveFormState(); });
+templateNameEl.addEventListener("input", () => { setTemplateMsg(""); refreshTemplateUI(); saveFormState(); });
+tplSaveBtn.addEventListener("click", () => saveTemplate(false));
+tplSaveAsBtn.addEventListener("click", () => saveTemplate(true));
+tplDeleteBtn.addEventListener("click", deleteTemplate);
+tplUndoBtn.addEventListener("click", async () => {
+  if (currentKey === NEW_KEY) {
+    if (templateText.value.trim() && !confirm("Clear what you've typed?")) return;
+    selectTemplate(NEW_KEY);
+  } else {
+    selectTemplate(currentKey);
+  }
+  await saveFormState();
+});
+document.querySelectorAll("button[data-insert]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const ins = btn.dataset.insert;
+    const start = templateText.selectionStart == null ? templateText.value.length : templateText.selectionStart;
+    const end = templateText.selectionEnd == null ? start : templateText.selectionEnd;
+    templateText.setRangeText(ins, start, end, "end");
+    templateText.focus();
+    templateText.dispatchEvent(new Event("input"));
+  });
+});
 document.getElementById("rotateVariants").addEventListener("change", () => {
   updateVariantCount();
   saveFormState();
 });
-templateSelect.addEventListener("change", () => {
-  templateText.value = famfitTemplateText(FAMFIT_TEMPLATES[templateSelect.value]);
-  updateVariantCount();
-  saveFormState();
-});
-templateText.value = famfitTemplateText(FAMFIT_TEMPLATES[0]);
-templateText.addEventListener("input", updateVariantCount);
-updateVariantCount();
+["staff", "location"].forEach((id) => document.getElementById(id).addEventListener("change", updatePreview));
+
+selectTemplate("b:0");
 
 function parseContacts(raw) {
   return raw
@@ -191,9 +450,10 @@ function collectFormState() {
     fIdleMax: document.getElementById("fIdleMax").value,
     fSignedWithin: document.getElementById("fSignedWithin").value,
     fMaxPages: document.getElementById("fMaxPages").value,
-    templateIndex: templateSelect.value,
+    templateKey: currentKey,
+    templateName: templateNameEl.value,
     templateText: templateText.value,
-    templatesVersion: 2, // templates with multiple rotating versions
+    templatesVersion: 3, // 3 = template picked by key, saved templates, unsaved drafts
     rotateVariants: document.getElementById("rotateVariants").checked,
     staff: document.getElementById("staff").value,
     location: document.getElementById("location").value,
@@ -210,6 +470,7 @@ function collectFormState() {
 }
 
 async function saveFormState() {
+  if (!stateReady) return; // would overwrite the saved state with blank defaults
   await chrome.storage.local.set({ [STATE_KEY]: collectFormState() });
 }
 
@@ -226,14 +487,13 @@ async function restoreFormState() {
   document.getElementById("fIdleMax").value = state.fIdleMax || "";
   document.getElementById("fSignedWithin").value = state.fSignedWithin || "";
   document.getElementById("fMaxPages").value = state.fMaxPages || "20";
-  if (state.templateIndex !== undefined && FAMFIT_TEMPLATES[state.templateIndex]) {
-    templateSelect.value = state.templateIndex;
+  // Templates (v3 state): same template, plus any unsaved edit. State from an
+  // older popup (picked by number from a different list) just starts fresh.
+  if (state.templatesVersion === 3 && typeof state.templateKey === "string") {
+    const key = keyExists(state.templateKey) ? state.templateKey : NEW_KEY;
+    // A saved template that no longer exists keeps its text as a draft.
+    selectTemplate(key, { text: state.templateText, name: state.templateName });
   }
-  // Saved before templates had multiple versions: show the new rotating
-  // versions of the chosen template instead of the old single message.
-  templateText.value = state.templatesVersion === 2 && state.templateText
-    ? state.templateText
-    : famfitTemplateText(FAMFIT_TEMPLATES[templateSelect.value] || FAMFIT_TEMPLATES[0]);
   document.getElementById("rotateVariants").checked = state.rotateVariants !== false;
   updateVariantCount();
   document.getElementById("autoSend").checked = !!state.autoSend;
@@ -303,11 +563,17 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
   });
 });
 document.getElementById("textCount").addEventListener("input", saveFormState);
-templateText.addEventListener("input", saveFormState);
-
 (async () => {
-  const restored = await restoreFormState();
+  await loadSavedTemplates();
+  populateTemplateSelect();
+  let restored = null;
+  try {
+    restored = await restoreFormState();
+  } finally {
+    stateReady = true;
+  }
   await loadFilterOptions(restored);
+  updatePreview(); // staff/location lists are filled in now
 })();
 
 document.getElementById("loadBtn").addEventListener("click", async () => {
@@ -375,6 +641,11 @@ document.getElementById("startBtn").addEventListener("click", async () => {
   }
   if (!loadedContacts || !loadedContacts.length) {
     statusEl.textContent = "Load contacts from the CRM, or paste a list, first.";
+    return;
+  }
+  const messageProblems = famfitTemplateProblems(templateText.value);
+  if (messageProblems.length) {
+    statusEl.textContent = "Fix the message first: " + messageProblems[0];
     return;
   }
   const textCount = numOrNull("textCount");

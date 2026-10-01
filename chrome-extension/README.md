@@ -29,7 +29,8 @@ For automatic updates, publish it (unlisted) on the Chrome Web Store - everythin
 4. **Text how many**: leave it blank for everyone loaded, or type a number to text only the first N.
 5. Pick a template. The optional Staff/Location fallbacks are used when a contact has none in the CRM.
    - Each template holds several **versions** of the same pitch, separated by a line with just `---`. With **Rotate between versions** on (the default), each batch starts at a random version and each contact gets the next one. Turn it off to send everyone the first version.
-   - All 20 starter templates come with 3 versions each. Edit, add or remove versions right in the box.
+   - There are 8 starter templates (Personal training, Holiday notice, Relocation, Membership expired win-back, Former members, Free pass / trial follow-up, Missed guests, Re-engagement), each with 3 versions. Edit, add or remove versions right in the box.
+   - **Your own messages:** pick "Write my own message...", type it, name it and click Save. Saved templates appear under "My saved templates" and can be edited (Save changes), copied (Save as new), reverted (Undo changes) or deleted. Starters are never changed; edit one and use "Save as my own template". The Insert buttons add `{{first_name}}`, `{{last_name}}`, `{{staff}}`, `{{location}}` or a new `---` version. A message with an unknown or malformed `{{field}}` can't be saved or started. Saved templates are kept in `chrome.storage.local` under `famfitSavedTemplates` (this Chrome profile only).
 6. **Start batch**:
    - **Manual** (Auto-send off): each person's SMS box opens pre-filled, with their name and phone shown large in the corner. Review it, then click Send or press **Ctrl+Enter**. It moves on when the CRM confirms the send.
    - **Auto-send**: set "seconds between auto-sends" (default 5) and the **sending hours** (default 9:00 AM - 8:00 PM), start, and confirm. It keeps its pace even when the CRM tab is in the background.

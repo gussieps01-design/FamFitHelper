@@ -64,6 +64,24 @@ PART 2 - SEND A BATCH OF TEXTS
    might have no staff or location, pick a fallback in the two boxes
    below the template.
 
+   The starter templates are: Personal training, Holiday notice,
+   Relocation, Membership expired win-back, Former members, Free pass /
+   trial follow-up, Missed guests and Re-engagement (cold lead).
+
+   YOUR OWN MESSAGES: pick "Write my own message..." at the bottom of
+   the Template list and type it. Use the small "Insert" buttons to
+   drop in the person's name, your name or the location. Type a name
+   for it and click "Save template" to keep it - it then shows up
+   under "My saved templates". To change one later, pick it, edit the
+   text (or its name) and click "Save changes". "Save as new" makes a
+   copy, "Undo changes" goes back to the last saved text, and "Delete"
+   removes it. You can also edit a starter template and click "Save as
+   my own template" - the starter itself never changes. "Preview"
+   shows exactly what people will get. Saved templates stay in this
+   Chrome on this computer only.
+   If a message has a mistake (like {{firstname}} instead of
+   {{first_name}}) it can't be saved or sent until it's fixed.
+
    Each template has several VERSIONS of the same pitch, separated by
    a line with just --- on it. With "Rotate between versions" checked
    (the default), each person gets the next version, so people don't

@@ -20,6 +20,15 @@
   #status, #runStatus { margin-top: 8px; font-size: 12px; white-space: pre-wrap; }
   #runStatus { max-height: 160px; overflow-y: auto; }
   details summary { font-size: 12px; cursor: pointer; margin-top: 8px; color: #8A8378; }
+  .inserts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+  button.mini { margin: 0; width: auto; padding: 3px 7px; font-size: 11px; font-weight: normal; background: #fff; color: #2B2724; border: 1px solid #C9C0B2; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .problem { background: #FBE9E4; border: 1px solid #C6552B; color: #7A2A0E; border-radius: 3px; padding: 6px; font-size: 12px; margin-top: 6px; }
+  #templateMsg { font-size: 12px; margin-top: 6px; min-height: 14px; }
+  #templateMsg.ok { color: #2E7D32; }
+  #templateMsg.err { color: #B3261E; font-weight: bold; }
+  #previewList .pv { background: #fff; border: 1px solid #E8E1D6; border-radius: 3px; padding: 6px; margin-top: 6px; font-size: 12px; white-space: pre-wrap; }
+  #previewList .pv small { display: block; color: #8A8378; margin-top: 3px; }
 </style>
 </head>
 <body>
@@ -98,14 +107,51 @@
     <div class="muted" style="margin:0;">days - skip anyone texted from this browser within this many days (0 = off)</div>
   </div>
 
-  <label>Template</label>
-  <select id="templateSelect"></select>
-  <textarea id="templateText" style="height:140px;"></textarea>
-  <label style="display:flex;align-items:center;gap:6px;margin-top:4px;">
-    <input type="checkbox" id="rotateVariants" style="width:auto;" checked>
-    <span>Rotate between versions (so people don't all get the same wording)</span>
-  </label>
-  <div id="variantCount" class="muted" style="margin-bottom:0;"></div>
+  <fieldset id="templateBox">
+    <legend>Message</legend>
+    <label for="templateSelect" style="margin-top:0;">Template (or pick "Write my own")</label>
+    <select id="templateSelect"></select>
+    <div id="templateHint" class="muted" style="margin:3px 0 0 0;"></div>
+
+    <div id="templateNameRow" style="display:none;">
+      <label for="templateName">Name of your template</label>
+      <input id="templateName" type="text" maxlength="60" placeholder="e.g. Spring promo">
+    </div>
+
+    <label for="templateText">Message (type or edit it here)</label>
+    <textarea id="templateText" style="height:140px;" placeholder="Type your message. Use {{first_name}} where the person's name should go."></textarea>
+    <div class="inserts">
+      <span class="muted" style="margin:0;">Insert:</span>
+      <button type="button" class="mini" data-insert="{{first_name}}">first name</button>
+      <button type="button" class="mini" data-insert="{{last_name}}">last name</button>
+      <button type="button" class="mini" data-insert="{{staff}}">my name</button>
+      <button type="button" class="mini" data-insert="{{location}}">location</button>
+      <button type="button" class="mini" data-insert="&#10;---&#10;" title="Starts another version of the message">new version</button>
+    </div>
+    <div id="templateInfo" class="muted" style="margin:4px 0 0 0;"></div>
+    <div id="templateProblems" class="problem" style="display:none;"></div>
+
+    <div class="row">
+      <button type="button" id="tplSave">Save</button>
+      <button type="button" id="tplSaveAs" class="secondary">Save as new</button>
+    </div>
+    <div class="row">
+      <button type="button" id="tplUndo" class="secondary">Undo changes</button>
+      <button type="button" id="tplDelete" class="secondary">Delete</button>
+    </div>
+    <div id="templateMsg" aria-live="polite"></div>
+
+    <details id="previewBox">
+      <summary>Preview what people will get</summary>
+      <div id="previewList"></div>
+    </details>
+
+    <label style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+      <input type="checkbox" id="rotateVariants" style="width:auto;" checked>
+      <span>Rotate between versions (so people don't all get the same wording)</span>
+    </label>
+    <div id="variantCount" class="muted" style="margin-bottom:0;"></div>
+  </fieldset>
 
   <div class="row">
     <div>
