@@ -1,45 +1,49 @@
 # FamFitHelper - Handoff (2026-10-01)
 
+## Status in one line
+The Chrome extension (v1.4.2) works on the live CRM (user-confirmed: auto-send "Done: 5 sent, 0 skipped of 5") and is the **stable baseline**. The desktop app is archived. Nothing is pending; `master` is clean and matches GitHub.
+
 ## STABLE BASELINE: extension v1.4.2
-**v1.4.2 is the known-good version. Build every future version on top of it.**
-- Confirmed by the user on the live CRM (2026-10-01): auto-send "Done: 5 sent, 0 skipped of 5"; the user called it "everything works good".
-- Marked in git: tag **`extension-stable-1.4.2`** and branch **`stable`** (both point at the baseline). Release: https://github.com/gussieps01-design/FamFitHelper/releases/tag/extension-v1.4.2
-- To start new work: `git checkout -b <new-branch> extension-stable-1.4.2`. To compare a change against the baseline: `git diff extension-stable-1.4.2`. If a later version breaks, the baseline zip on the release page is the fallback.
-- Don't regress the hard-won CRM behaviour (see "CRM facts learned"): close any open message window before opening the next contact (the open link is a toggle); use the *visible* SMS form; record the extension's own Send click directly; treat the window closing/refreshing or the green banner as "sent".
+**Build every future version on top of it.**
+- git: tag **`extension-stable-1.4.2`** and branch **`stable`**. `master` contains the same extension code (0 files differ).
+- Release (marked "stable baseline"): https://github.com/gussieps01-design/FamFitHelper/releases/tag/extension-v1.4.2
+- Start new work: `git checkout -b <new-branch> extension-stable-1.4.2` (or from `master`). Compare: `git diff extension-stable-1.4.2`. If a later version breaks, the baseline zip is the fallback.
+- **Don't regress the live-CRM behaviour** (see "CRM facts"): close any open message window before opening the next contact (the open link is a toggle); use the *visible* SMS form; record the extension's own Send click directly; treat the window closing/refreshing or the green banner as "sent".
 
-## What this is
-- Chrome extension (`chrome-extension\`, v1.4.2) that pre-fills SMS templates for batches of contacts in the live production CRM at `https://crm.healthyimagefitness.com` (real gym customers), and can optionally auto-send them.
-- The older desktop app (`app.py`) was **archived on 2026-10-01** (user decision: the extension replaces it). It's removed from `master`; the last code with it is tag `desktop-app-final`, and the exe is in release `v1.1.0`. It had known, unfixed bugs (see bottom) - don't revive it without fixing those.
-- Repo: https://github.com/gussieps01-design/FamFitHelper. Extension work landed via PR #1 (`extension-v1.1-open-by-id`).
+## What's in the repo
+- `chrome-extension/` - the product (Manifest V3, unpacked): `content.js` (search + batch engine, runs on the CRM page), `popup.html/js` (UI), `templates.js` (20 starter templates x 3 rotating versions), `manifest.json`, `README.md`.
+- `HOW-TO-USE.txt` - plain-language install/use/update guide for non-technical staff (also shipped in each release zip).
+- `README.md` - overview; `HANDOFF.md` - this file.
+- Repo: https://github.com/gussieps01-design/FamFitHelper. History: PR #1 (extension v1.1 -> v1.4.2), PR #2 (archive desktop app).
 
-## How the extension works now
-- **Load** sends Status / Priority / Staff / Idle / Signed-within to the CRM's own grid endpoint (`/customers_grid.json`, Kendo-style `filter[...]` params), so it searches all ~21.5k customers. Location, the Dead/bounced/unsubscribed/no-phone exclusions, and duplicate-phone removal happen in the extension. Every returned row is re-checked client-side.
-- **Opening a contact** clicks a synthetic remote-modal link `/customers/<id>/customer_journal_items/new` (CRM-loaded contacts carry their id). Pasted contacts (no id) must be on the visible grid page.
-- **Filling** targets the textarea inside `form#new_sms_customer_message` (the page reuses the same id for a hidden Email textarea). The previous modal is marked `data-famfit-stale` so only freshly loaded content is filled.
-- **Sent** = Send was clicked for this contact AND then the modal closed (what the live CRM does) or the green `.alert-success` banner appeared.
-- **Batch engine** (`content.js`): state in `chrome.storage.local.famfitBatch` (`index`, `stats`, `inFlight`, `owner`, `running`, `lastActivity`, `delaySec`, ...). Failures skip + log; 3 in a row stop the run; `inFlight` prevents double-texting after a reload; a reloaded page auto-resumes an auto-send run active in the last 10 min; only the owning tab acts. Auto-send only clicks when the visible box holds exactly the rendered message. `famfitLastRun` keeps the last summary.
-- **Popup**: Start resumes a stored batch (never restarts at contact 1); Stop ends it and saves the summary.
+## How the extension works
+- **Load:** Status / Priority / Staff / Idle / Signed-within are sent to the CRM's grid endpoint (`/customers_grid.json`, Kendo `filter[...]` params) so all ~21.5k customers are searched; one plain-AND query per value combination (the CRM's OR groups are broken), every row re-checked client-side. Location, Dead/bounced/unsubscribed/no-phone exclusion, duplicate-phone removal and the re-text cooldown are applied in the extension.
+- **Open:** closes any open message window first, then clicks a synthetic remote-modal link `/customers/<id>/customer_journal_items/new` (CRM-loaded contacts carry their id; pasted contacts must be on the visible grid page). Old window content is marked `data-famfit-stale`; only fresh, visible content is used.
+- **Fill:** picks the template version (rotation: random start per batch, then next per contact; or always version 1), renders `{{first_name}} {{last_name}} {{staff}} {{location}}`; never auto-sends text with a blank `{{field}}`.
+- **Send:** manual (human clicks Send / Ctrl+Enter) or auto-send (clicks only when the visible box holds this contact's message). "Sent" = Send clicked AND then the window closed, the window refreshed (new/emptied box), or the green banner appeared.
+- **Batch engine** (`chrome.storage.local.famfitBatch`): failures skip + log; 3 in a row stop the run; `inFlight` prevents double-texting after a reload; auto-send runs auto-resume after a page reload (within 10 min); only the owning tab acts (heartbeat in `famfitHeartbeat`). `famfitSentLog` = per-phone last-texted time for the cooldown (this Chrome profile only). `famfitLastRun` = last summary.
+- **Popup:** Start resumes a stored batch; Stop ends it and saves a summary. Shows the version in its title and an "Update available" notice (checks GitHub releases, cached 6h).
+- Every badge/skip reason starts with "FamFitHelper vX.Y.Z:" and failures include a page snapshot `[page: N SMS form(s), N visible, N message window(s) open]` - ask the user to paste it when debugging.
 
-## CRM facts learned (live, read-only checks)
-- Grid filter support: status works only by numeric code (0 Member, 1 Guest, 2 Trial, 3 Corporate, 4 Contest Box, 5 Phone Inquiry, 6 Former Member, 7 Member Referral, 9 Event); priority by name; `user_id`; `idle` gte/lte; `created_at` gte `YYYY-MM-DD`.
-- Broken server-side: nested OR groups (a status OR-group + any other filter returns 0), `location`/`location_id`, `user` by name, `neq`. Hence one plain-AND query per value combination.
-- `created_at` comes back as `MM/DD/YYYY hh:mm AM/PM`.
-- After reloading the unpacked extension, refresh the CRM tab or the old content script is dead.
-- Recorded live (2026-10-01): the open link (`data-remote` + `data-toggle="modal"` + `data-target="#modal-window"`) is a Bootstrap TOGGLE - clicking it while the window is open closes it. The page has TWO `#modal-window` elements (the first one is used). The SMS tab (`#smss`) is active by default. Send = `a#submit_sms_message.submit_message` whose own click handler does `if (sent) return; sent = true;` then `$.post` of `#new_sms_customer_message` (action `/customers/<id>/customer_messages.js`, data-remote) and on success evals the JS reply and inserts `.alert-success #flash_notice` ("Message is sended") before `#main_content`. `var sent = false` is reset by the window's inline scripts on every load.
-- After a send the window may stay open (refreshed) rather than close. v1.4.2 closes any open window (its X) before opening the next contact - this fixed the "every other contact fails" bug. Confirmed live: 5 sent, 0 skipped.
+## CRM facts (recorded live, read-only)
+- The open link (`data-remote` + `data-toggle="modal"` + `data-target="#modal-window"`) is a Bootstrap **toggle** - clicking it while the window is open closes it. The page has TWO `#modal-window` elements (the first is used).
+- Window: `#journal-history-modal` > `a[href="#messages"]` > `a[href="#smss"]` (SMS active by default) > `form#new_sms_customer_message` (data-remote, action `/customers/<id>/customer_messages.js`) > `textarea#customer_message_message` (same id also on the Email form).
+- Send = `a#submit_sms_message.submit_message`; its own click handler: `if (sent) return; sent = true;` then `$.post` the form; on success evals the JS reply and inserts `.alert-success #flash_notice` ("Message is sended") before `#main_content`. `var sent = false` is reset by the window's inline scripts on every load. After a send the window may stay open (refreshed).
+- Grid filters: status only by numeric code (0 Member, 1 Guest, 2 Trial, 3 Corporate, 4 Contest Box, 5 Phone Inquiry, 6 Former Member, 7 Member Referral, 9 Event); priority by name; `user_id`; `idle` gte/lte; `created_at` gte `YYYY-MM-DD`. Broken: nested OR groups, `location`/`location_id`, `user` by name, `neq`. `created_at` comes back as `MM/DD/YYYY hh:mm AM/PM`.
 
-## Verification status
-- Mock-CRM harness (real extension files, stubbed `chrome.*`; lives in a session scratchpad, not the repo): 48 content-script, 4 page-reload, 29 popup, 20 filter-logic checks - all pass.
-- Live CRM, read-only: server-side filtering checked on 6 combinations - 0 missed, 0 wrong.
-- User-confirmed live: open-by-id + fill + advance for off-page contacts; on 2026-09-30 the user tested v1.2 on the live CRM and reported it working.
-- Claude cannot drive the real popup or send real texts; live checks are the user's.
-
-## Next steps
-- Merge PR #1 into master (the auto-mode classifier blocks Claude from merging without review).
-- Share `HOW-TO-USE.txt` with other staff; start with small batches.
-- Possible follow-up: after Stop, Start re-runs the loaded list from the top (documented; not guarded in code).
+## Working on it - lessons learned
+- **Mock tests are not enough.** v1.2-v1.4.1 all passed a local mock CRM but failed live. The breakthrough was recording the real CRM (passive MutationObserver + event logger in a Claude-group Chrome tab while the user clicked). Do that first when something fails live.
+- Claude is blocked from opening message windows or sending on the live CRM (real customers); live checks need the user. Read-only GETs to `/customers_grid.json` are fine.
+- The mock harness used for tests lived in a session scratchpad and is **not** in the repo. Rebuild one if needed; include the toggle, refresh-after-send and duplicate-id behaviour above.
+- After reloading the unpacked extension, refresh the CRM tab (old content scripts go dead). Updating = Remove + Load unpacked the new folder (unzipping elsewhere does NOT update Chrome's copy); the popup title shows the version actually loaded.
+- Releases: zip of `chrome-extension/` + `HOW-TO-USE.txt` via `git archive`, published with `gh release create extension-vX.Y.Z --latest` (gh is installed at `C:\Program Files\GitHub CLI\gh.exe`, signed in). Bump `manifest.json` version each release.
 
 ## Known gaps
-- Click Send, CRM rejects it, then close the box -> counted as sent (rare now that no-phone contacts are excluded).
-- Chrome still slows timers (pacing, 20s confirm) in hidden tabs; keep the CRM tab visible.
-- Desktop app (`app.py`, archived - tag `desktop-app-final`), never fixed: CRM worker errors leave the UI stuck (`lambda: ...(e)` NameError), "Signed up within" never matches (date format), Copy & Next marks contacts done without copying when placeholders are blank, corrupt JSON files crash startup.
+- Click Send, the CRM rejects it, then close the box -> counted as sent (rare; no-phone contacts are excluded).
+- Chrome slows timers (pacing, 20s confirm) in hidden tabs; keep the CRM tab visible during long runs.
+- The re-text cooldown only knows texts sent from the same Chrome profile.
+- No time-of-day limit on auto-send; start runs during reasonable hours.
+- True auto-update would need the Chrome Web Store (unlisted, $5 developer account); currently users update manually from the release page.
+
+## Desktop app (archived 2026-10-01)
+User decision: the extension replaces it. Removed from `master` in PR #2; last code at tag `desktop-app-final`; exe in release `v1.1.0` (titled "desktop app - archived"). Local build leftovers (dist/, build/, .spec, __pycache__) were deleted. It had unfixed bugs (CRM worker errors leave the UI stuck via a `lambda: ...(e)` NameError; "Signed up within" never matches due to the CRM's date format; Copy & Next marks contacts done without copying when placeholders are blank; corrupt JSON crashes startup) - don't revive it without fixing those.
