@@ -1,7 +1,14 @@
-# FamFitHelper - Handoff (2026-09-30)
+# FamFitHelper - Handoff (2026-10-01)
+
+## STABLE BASELINE: extension v1.4.2
+**v1.4.2 is the known-good version. Build every future version on top of it.**
+- Confirmed by the user on the live CRM (2026-10-01): auto-send "Done: 5 sent, 0 skipped of 5"; the user called it "everything works good".
+- Marked in git: tag **`extension-stable-1.4.2`** and branch **`stable`** (both point at the baseline). Release: https://github.com/gussieps01-design/FamFitHelper/releases/tag/extension-v1.4.2
+- To start new work: `git checkout -b <new-branch> extension-stable-1.4.2`. To compare a change against the baseline: `git diff extension-stable-1.4.2`. If a later version breaks, the baseline zip on the release page is the fallback.
+- Don't regress the hard-won CRM behaviour (see "CRM facts learned"): close any open message window before opening the next contact (the open link is a toggle); use the *visible* SMS form; record the extension's own Send click directly; treat the window closing/refreshing or the green banner as "sent".
 
 ## What this is
-- Chrome extension (`chrome-extension\`, v1.2.0) that pre-fills SMS templates for batches of contacts in the live production CRM at `https://crm.healthyimagefitness.com` (real gym customers), and can optionally auto-send them.
+- Chrome extension (`chrome-extension\`, v1.4.2) that pre-fills SMS templates for batches of contacts in the live production CRM at `https://crm.healthyimagefitness.com` (real gym customers), and can optionally auto-send them.
 - A desktop app (`app.py`) also exists; it was out of scope for this work and has known, unfixed bugs (see bottom).
 - Repo: https://github.com/gussieps01-design/FamFitHelper. Extension work landed via PR #1 (`extension-v1.1-open-by-id`).
 
