@@ -1292,9 +1292,9 @@
     let pagesSearched = 0;
     let excluded = 0;
     let complete = true;
-    let crmLimit = false; // the CRM stopped answering deep pages
+    let crmLimit = false; // the CRM stopped answering deep pages in at least one of the searches
     for (const combo of combos) {
-      if (crmLimit) break;
+      // Each combination is its own search: one that runs into the CRM's limit must not stop the others.
       const extra = filterParams(combo);
       let comboTotal = 0;
       let page = 1;

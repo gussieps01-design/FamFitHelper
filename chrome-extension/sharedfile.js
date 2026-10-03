@@ -24,7 +24,12 @@ function famfitNewer(x, y) {
   const uy = y.updatedAt || 0;
   if (ux !== uy) return ux > uy;
   if (!!x.deleted !== !!y.deleted) return !!x.deleted; // a delete wins a tie
-  return JSON.stringify(x) > JSON.stringify(y); // any fixed rule, same on every computer
+  // Same millisecond, both live, different content (two profiles edited at once): any fixed
+  // rule works as long as every computer picks the same one. Compare the TEXT first so that
+  // a rename (a name clash adds "(2)") can never change which edit wins.
+  const tx = x.text || "", ty = y.text || "";
+  if (tx !== ty) return tx > ty;
+  return (x.name || "") > (y.name || "");
 }
 
 // Merge two lists of saved entries (either may include tombstones). The same
@@ -57,7 +62,10 @@ function famfitMergeTemplates(a, b, now, starterNames) {
           name = base.slice(0, FAMFIT_NAME_MAX - suffix.length) + suffix;
         } while (used.has(name.toLowerCase()));
         const i = list.indexOf(t);
-        list[i] = { ...t, name, updatedAt: Math.max(now, (t.updatedAt || 0) + 1) };
+        // Keep updatedAt as it was: bumping it would let a rename beat a delete made
+        // in another profile and bring a deleted template back. Every profile reaches
+        // the same rename on its own from the same two entries.
+        list[i] = { ...t, name };
       }
       used.add(name.toLowerCase());
     });
