@@ -30,10 +30,6 @@ What it does:
 
 **Automatic updates:** to have Chrome update the extension by itself, publish it (unlisted) on the Chrome Web Store - see [store/PUBLISHING.md](store/PUBLISHING.md).
 
-## Testing without the real CRM
-
-`mock-crm/` is a stand-in CRM (fake customers, built from a recording of the real one) for testing changes safely. See [mock-crm/README.md](mock-crm/README.md).
-
 ## Desktop app (archived)
 
 The older Windows desktop app (`app.py` / `FamFitHelper.exe`) is retired; the Chrome extension replaces it. It's kept for reference:
