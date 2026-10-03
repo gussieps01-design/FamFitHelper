@@ -697,7 +697,10 @@ document.getElementById("loadBtn").addEventListener("click", async () => {
   loadedSummaryEl.textContent = (resp.complete
     ? `${resp.matches.length} contact(s) loaded - all ${resp.total} CRM match(es) searched, ${resp.excluded} auto-excluded (Dead/bounced/unsubscribed/no phone)` +
       (resp.duplicates ? `, ${resp.duplicates} duplicate phone(s) dropped.` : ".")
-    : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`) + recentNote;
+    : resp.crmLimit
+      // The CRM stops answering once a search reaches deep into its list (HTTP 500 around row 10,000).
+      ? `${resp.matches.length} contact(s) loaded. The CRM stops listing a search after about ${resp.pagesSearched * 100} rows (${resp.total} match), so the rest can't be reached with these filters. Narrow them (Status, Priority, Staff, Idle, Signed up within) to get everyone.`
+      : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`) + recentNote;
   updateTextCountLabel();
   await saveFormState();
 });
