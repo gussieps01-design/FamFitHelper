@@ -5,5 +5,10 @@ dist/
 *.spec
 sent_log.json
 
-# generated test copy of the extension (node mock-crm/make-test-extension.js)
-mock-crm/test-extension/
+# Dev tools live in a separate PRIVATE repo (gussieps01-design/FamFitHelper-dev)
+# but sit in the same folder on the developer machine - never commit them here.
+/mock-crm/
+/CLAUDE.md
+/HANDOFF.md
+/dev-git.sh
+/.git-dev/
