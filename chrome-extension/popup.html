@@ -168,6 +168,10 @@
     </div>
   </div>
 
+  <label for="unassignedStaff">Name to use for contacts with no staff assigned ("Unassigned")</label>
+  <input id="unassignedStaff" type="text" maxlength="60" value="Michael Lara" placeholder="Michael Lara">
+  <div class="muted" style="margin-top:2px;">Fills {{staff}} for those contacts. Change it any time; it's remembered. Blank = use the Staff fallback above.</div>
+
   <label style="display:flex;align-items:center;gap:6px;margin-top:10px;">
     <input type="checkbox" id="autoSend" style="width:auto;">
     <span>Auto-send each message automatically (skips manual click/review per contact)</span>

@@ -689,7 +689,7 @@
     const rendered = famfitRenderTemplate(variant, {
       first_name: firstName || "",
       last_name: rest.join(" "),
-      staff: contact.staff || batch.staff || "",
+      staff: staffNameFor(contact, batch),
       location: contact.location || batch.location || "",
     });
 
@@ -812,6 +812,17 @@
   // last appeared. The CRM adds it only after a send succeeds, so it is the
   // proof that a text went out.
   let lastBannerAt = 0;
+
+  // The name {{staff}} becomes for this contact. A contact with a real staff
+  // member uses that name. One with nobody assigned (blank, or the CRM's
+  // "Unassigned") uses the batch's "unassigned" name (default Michael Lara,
+  // changeable in the popup); if that is blank, the old Staff fallback; else
+  // "" so {{staff}} is flagged instead of texting the word "Unassigned".
+  function staffNameFor(contact, batch) {
+    const own = (contact.staff || "").trim();
+    if (own && own.toLowerCase() !== "unassigned") return own;
+    return (batch.unassignedStaff || "").trim() || (batch.staff || "").trim();
+  }
 
   function fillBox(box, text) {
     box.value = text;
