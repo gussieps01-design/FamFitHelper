@@ -64,6 +64,12 @@ PART 2 - SEND A BATCH OF TEXTS
    might have no staff or location, pick a fallback in the two boxes
    below the template.
 
+   UNASSIGNED CONTACTS: if a contact has nobody assigned in the CRM
+   ("Unassigned"), {{staff}} becomes the name in the box "Name to use
+   for contacts with no staff assigned" - it starts as Michael Lara.
+   Type a different name there any time; it's remembered. Leave it
+   blank to use the Staff fallback instead.
+
    The starter templates are: Personal training, Holiday notice,
    Relocation, Membership expired win-back, Former members, Free pass /
    trial follow-up, Missed guests and Re-engagement (cold lead).

@@ -184,8 +184,12 @@ function updatePreview() {
     div.textContent = rendered;
     const small = document.createElement("small");
     const len = rendered.length;
+    // A text holds 160 plain characters (153 each when split). Any emoji or
+    // curly quote switches the whole text to a mode that holds only 70 (67).
+    const fancy = /[^\x00-\x7F]/.test(rendered);
+    const [one, part] = fancy ? [70, 67] : [160, 153];
     small.textContent = `${all.length > 1 ? `Version ${i + 1} - ` : ""}${len} characters` +
-      (len > 160 ? ` (long - may send as ${Math.ceil(len / 153)} text segments)` : "");
+      (len > one ? ` (long - may send as ${Math.ceil(len / part)} text segments${fancy ? "; emoji and curly quotes make texts shorter" : ""})` : "");
     div.appendChild(small);
     previewListEl.appendChild(div);
   });
@@ -523,6 +527,7 @@ function populateSelect(id, values, opts) {
 }
 
 const STATE_KEY = "famfitPopupState";
+const DEFAULT_UNASSIGNED_STAFF = "Michael Lara"; // {{staff}} for contacts with nobody assigned
 
 function collectFormState() {
   return {
@@ -541,6 +546,7 @@ function collectFormState() {
     templatesVersion: 3, // 3 = template picked by key, saved templates, unsaved drafts
     rotateVariants: document.getElementById("rotateVariants").checked,
     staff: document.getElementById("staff").value,
+    unassignedStaff: document.getElementById("unassignedStaff").value,
     location: document.getElementById("location").value,
     autoSend: document.getElementById("autoSend").checked,
     delaySec: document.getElementById("delaySec").value,
@@ -583,6 +589,8 @@ async function restoreFormState() {
   document.getElementById("rotateVariants").checked = state.rotateVariants !== false;
   updateVariantCount();
   document.getElementById("autoSend").checked = !!state.autoSend;
+  // Missing (older saved state) -> the default; an empty box is a real choice.
+  document.getElementById("unassignedStaff").value = typeof state.unassignedStaff === "string" ? state.unassignedStaff : DEFAULT_UNASSIGNED_STAFF;
   document.getElementById("delaySec").value = state.delaySec || "5";
   document.getElementById("sendHoursOn").checked = state.sendHoursOn !== false;
   document.getElementById("sendStart").value = state.sendStart || "09:00";
@@ -633,9 +641,11 @@ document.getElementById("refreshOptionsBtn").addEventListener("click", () => loa
   "fStatus", "fPriority", "fLocation", "fStaff",
   "fIdleMin", "fIdleMax", "fSignedWithin", "fMaxPages",
   "staff", "location", "autoSend", "delaySec", "sendHoursOn", "sendStart", "sendEnd", "cooldownDays", "textCount",
+  "unassignedStaff",
 ].forEach((id) => {
   document.getElementById(id).addEventListener("change", saveFormState);
 });
+document.getElementById("unassignedStaff").addEventListener("input", saveFormState);
 
 // Picking "Any" (even with ctrl-click alongside other values) clears every
 // other pick in that box, so "Any" always means no filter.
@@ -687,7 +697,10 @@ document.getElementById("loadBtn").addEventListener("click", async () => {
   loadedSummaryEl.textContent = (resp.complete
     ? `${resp.matches.length} contact(s) loaded - all ${resp.total} CRM match(es) searched, ${resp.excluded} auto-excluded (Dead/bounced/unsubscribed/no phone)` +
       (resp.duplicates ? `, ${resp.duplicates} duplicate phone(s) dropped.` : ".")
-    : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`) + recentNote;
+    : resp.crmLimit
+      // The CRM stops answering once a search reaches deep into its list (HTTP 500 around row 10,000).
+      ? `${resp.matches.length} contact(s) loaded. The CRM stops listing a search after about ${resp.pagesSearched * 100} rows (${resp.total} match), so the rest can't be reached with these filters. Narrow them (Status, Priority, Staff, Idle, Signed up within) to get everyone.`
+      : `${resp.matches.length} contact(s) loaded from the first ${resp.pagesSearched} page(s) of ${resp.total} CRM match(es). Raise "Search up to N pages" to get the rest.`) + recentNote;
   updateTextCountLabel();
   await saveFormState();
 });
@@ -751,6 +764,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     contacts: contactsToSend,
     templateText: templateText.value,
     staff: document.getElementById("staff").value,
+    unassignedStaff: document.getElementById("unassignedStaff").value.trim(),
     location: document.getElementById("location").value,
     autoSend,
     delaySec: Math.max(1, numOrNull("delaySec") || 5),

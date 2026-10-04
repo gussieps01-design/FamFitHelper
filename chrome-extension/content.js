@@ -680,7 +680,9 @@
     }
     if (myRun !== runId) return;
 
-    const [firstName, ...rest] = (contact.name || "").split(" ");
+    // The CRM keeps stray spaces in ~8% of names (leading, trailing, doubled):
+    // split on any run of whitespace so " Mary  Ann Smith " is first "Mary", last "Ann Smith".
+    const [firstName = "", ...rest] = (contact.name || "").trim().split(/\s+/);
     // Rotate through the template's versions: each contact gets the next
     // one, starting from a random version per batch.
     const variants = famfitSplitVariants(batch.templateText);
@@ -689,7 +691,7 @@
     const rendered = famfitRenderTemplate(variant, {
       first_name: firstName || "",
       last_name: rest.join(" "),
-      staff: contact.staff || batch.staff || "",
+      staff: staffNameFor(contact, batch),
       location: contact.location || batch.location || "",
     });
 
@@ -812,6 +814,21 @@
   // last appeared. The CRM adds it only after a send succeeds, so it is the
   // proof that a text went out.
   let lastBannerAt = 0;
+
+  // The name {{staff}} becomes for this contact. A contact with a real staff
+  // member uses that name. One with nobody assigned (blank, or the CRM's
+  // "Unassigned") uses the batch's "unassigned" name (default Michael Lara,
+  // changeable in the popup); if that is blank, the old Staff fallback; else
+  // "" so {{staff}} is flagged instead of texting the word "Unassigned".
+  function isUnassignedName(name) {
+    return (name || "").trim().toLowerCase() === "unassigned";
+  }
+
+  function staffNameFor(contact, batch) {
+    const own = (contact.staff || "").trim();
+    if (own && !isUnassignedName(own)) return own;
+    return (batch.unassignedStaff || "").trim() || (batch.staff || "").trim();
+  }
 
   function fillBox(box, text) {
     box.value = text;
@@ -1141,7 +1158,9 @@
     }
     if (f.priority && f.priority.length) { clauses.push(["priority", "eq", f.priority]); used.push("priority"); }
     if (f.staff && f.staff.length) {
-      const ids = f.staff.map((s) => staffIds[s]);
+      // The CRM lists unassigned customers as "Unassigned" with user_id null, yet
+      // `user_id eq 0` finds them (44% of all customers) - so map that name to 0.
+      const ids = f.staff.map((s) => staffIds[s] || (isUnassignedName(s) ? [0] : undefined));
       if (ids.every((x) => x && x.length)) { clauses.push(["user_id", "eq", [].concat(...ids)]); used.push("staff"); }
     }
     if (f.idleMin != null) { clauses.push(["idle", "gte", [f.idleMin]]); used.push("idle min"); }
@@ -1229,6 +1248,8 @@
           if (c.staff_id != null) {
             staffIds[name] = staffIds[name] || [];
             if (!staffIds[name].includes(c.staff_id)) staffIds[name].push(c.staff_id);
+          } else if (isUnassignedName(name)) {
+            staffIds[name] = [0]; // the id the CRM's filter uses for "nobody"
           }
         }
       }
@@ -1271,13 +1292,25 @@
     let pagesSearched = 0;
     let excluded = 0;
     let complete = true;
+    let crmLimit = false; // the CRM stopped answering deep pages in at least one of the searches
     for (const combo of combos) {
+      // Each combination is its own search: one that runs into the CRM's limit must not stop the others.
       const extra = filterParams(combo);
       let comboTotal = 0;
       let page = 1;
       for (; ; page++) {
         if (pagesSearched >= maxPages) { complete = false; break; }
-        const { contacts, total: t } = await fetchCustomersPage(page, extra);
+        let pageResult;
+        try {
+          pageResult = await fetchCustomersPage(page, extra);
+        } catch (e) {
+          // The CRM answers HTTP 500 once a search reaches deep into its list
+          // (seen at about row 10,000). Keep what was found instead of failing
+          // the whole search, and say so.
+          if (page > 1 && /HTTP 500/.test(e.message)) { crmLimit = true; complete = false; break; }
+          throw e;
+        }
+        const { contacts, total: t } = pageResult;
         pagesSearched++;
         if (page === 1) { comboTotal = t; total += t; }
         for (const c of contacts) {
@@ -1307,7 +1340,7 @@
         if (!contacts.length || page * 100 >= comboTotal) break;
       }
     }
-    return { matches, pagesSearched, total, excluded, duplicates, recentlyTexted, serverFiltered, complete };
+    return { matches, pagesSearched, total, excluded, duplicates, recentlyTexted, serverFiltered, complete, crmLimit };
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1329,7 +1362,9 @@
           showBadge(
             result.complete
               ? `Loaded ${result.matches.length} matching contact(s) - searched all ${result.total} CRM match(es), ${result.excluded} auto-excluded.`
-              : `Loaded ${result.matches.length} contact(s) from the first ${result.pagesSearched} page(s) of ${result.total} CRM match(es) - raise "Search up to N pages" to get the rest.`,
+              : result.crmLimit
+                ? `Loaded ${result.matches.length} contact(s). The CRM stops listing after about ${result.pagesSearched * 100} rows of one search - narrow the filters to reach the rest.`
+                : `Loaded ${result.matches.length} contact(s) from the first ${result.pagesSearched} page(s) of ${result.total} CRM match(es) - raise "Search up to N pages" to get the rest.`,
             result.complete ? "#2a7a2a" : "#b7791f"
           );
           sendResponse({ ok: true, ...result });
